@@ -4,7 +4,8 @@
 # Ver docs/04-runbook-sync-upstream.md (en el repo de análisis) para el procedimiento completo.
 #
 #   ./nuvioes/sync-upstream.sh 1.2.0              # rebase en una rama desechable
-#   ./nuvioes/sync-upstream.sh 1.2.0 --tag-latest # elige el tag estable más nuevo
+#   ./nuvioes/sync-upstream.sh --tag-latest       # elige el tag estable más nuevo
+#   SYNC_BRANCH=feat/x ./nuvioes/sync-upstream.sh 1.2.0   # ensayar sin tocar main
 #
 # Nunca mergea upstream/dev dentro de main: siempre rebase sobre un tag.
 #
@@ -24,6 +25,31 @@ if [ ! -f UPSTREAM_BASE ]; then
   exit 1
 fi
 OLD_BASE="$(tr -d '[:space:]' < UPSTREAM_BASE)"
+
+# Rama a sincronizar. Por defecto main. Overridable para poder ensayar el rebase
+# sin tocar main:  SYNC_BRANCH=feat/x ./nuvioes/sync-upstream.sh <tag>
+SRC_BRANCH="${SYNC_BRANCH:-main}"
+
+git rev-parse --verify --quiet "refs/heads/$SRC_BRANCH" >/dev/null \
+  || { echo "ERROR: no existe la rama $SRC_BRANCH" >&2; exit 1; }
+
+# Guardas de cordura. Sin esto el script puede "tener éxito" rebaseando nada:
+# si la rama no tiene commits propios encima del pin, el rebase es un no-op y el
+# resultado es el árbol de upstream sin nuestro tooling.
+PENDING="$(git rev-list --count "$OLD_BASE..$SRC_BRANCH")"
+if [ "$PENDING" -eq 0 ]; then
+  echo "ERROR: $SRC_BRANCH no tiene commits propios encima de $OLD_BASE." >&2
+  echo "       No hay nada que sincronizar. Si tu trabajo está en otra rama, mergeala primero" >&2
+  echo "       o pasá SYNC_BRANCH=<rama>." >&2
+  exit 1
+fi
+
+BUDGET_SCRIPT="$REPO_ROOT/nuvioes/check-conflict-budget.sh"
+if [ ! -x "$BUDGET_SCRIPT" ]; then
+  echo "ERROR: falta $BUDGET_SCRIPT (o no es ejecutable)." >&2
+  echo "       Recordá que upstream ignora scripts/*: nuestro tooling vive en nuvioes/." >&2
+  exit 1
+fi
 
 echo "==> Trayendo upstream"
 git fetch upstream --tags --prune
@@ -55,11 +81,13 @@ echo "==> Upstream avanzó $BEHIND commits entre $OLD_BASE y $TARGET_TAG"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="backup/pre-sync-$STAMP"
-git branch -f "$BACKUP" main
+git branch -f "$BACKUP" "$SRC_BRANCH"
 echo "==> Respaldo: $BACKUP"
 
+echo "==> Rama a sincronizar: $SRC_BRANCH ($PENDING commits propios)"
+
 WORK="sync/$TARGET_TAG-$STAMP"
-git switch -c "$WORK" main
+git switch -c "$WORK" "$SRC_BRANCH"
 
 echo
 echo "==> Rebase de nuestros commits sobre $TARGET_TAG"
@@ -67,7 +95,7 @@ if git rebase --onto "$TARGET_TAG" "$OLD_BASE" "$WORK"; then
   echo "==> Rebase LIMPIO"
 
   echo "==> Verificando presupuesto de conflicto"
-  ./nuvioes/check-conflict-budget.sh "$TARGET_TAG"
+  "$BUDGET_SCRIPT" "$TARGET_TAG"
 
   echo "$TARGET_TAG" > UPSTREAM_BASE
   git add UPSTREAM_BASE
@@ -76,19 +104,19 @@ if git rebase --onto "$TARGET_TAG" "$OLD_BASE" "$WORK"; then
 
   echo
   echo "==> Listo. Revisá el diff y probá en dispositivo, después:"
-  echo "      git switch main && git merge --ff-only $WORK"
+  echo "      git switch $SRC_BRANCH && git merge --ff-only $WORK"
   echo "      git tag -f upstream-pin"
-  echo "      git push origin main --tags"
+  echo "      git push origin $SRC_BRANCH --tags"
 else
   echo
   echo "==> CONFLICTOS. Archivos:"
   git diff --name-only --diff-filter=U || true
   echo
   echo "Resolvé, y luego:  git rebase --continue"
-  echo "Para abandonar:    git rebase --abort && git switch main && git branch -D $WORK"
+  echo "Para abandonar:    git rebase --abort && git switch $SRC_BRANCH && git branch -D $WORK"
   exit 1
 fi
 
 echo
 echo "==> La rama $WORK queda local para inspección."
-echo "    Para descartarla: git switch main && git branch -D $WORK"
+echo "    Para descartarla: git switch $SRC_BRANCH && git branch -D $WORK"
