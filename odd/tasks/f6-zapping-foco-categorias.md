@@ -239,12 +239,12 @@ y **elegir en ajustes qué categorías aparecen en ese slider**.
 - El contador del encabezado debe reflejar la **categoría**, no el total.
 
 ### Tareas
-- [ ] Slider arriba de la lista, con chips y estado activo visible
-- [ ] `setCategory` conectado (el método **ya existe** en el ViewModel)
-- [ ] Foco: entrada a la lista, ARRIBA al slider, ABAJO de vuelta; sin robar el foco inicial
-- [ ] `hiddenCategoryIds` en `LiveTvStore` + grupo en el panel de ajustes (sin permitir ocultar `Todos`/`Favoritos`)
-- [ ] Tests puros: `categoriesFor` ya está; agregar el filtrado de categorías visibles y que `All`/`Favorites` no se puedan ocultar
-- [ ] Limpiar el preview cuando el canal sale de la categoría
+- [x] Slider arriba de la lista, con chips y estado activo visible (`LiveTvCategorySlider.kt`, commit en HEAD)
+- [x] `setCategory` conectado (el método **ya existe** en el ViewModel)
+- [x] Código: focusRestorer al chip activo y `focusProperties { up = ... }` en la primera fila. Falta la verificación en dispositivo
+- [x] `hiddenCategoryIds` en `LiveTvStore` + grupo en el panel de ajustes (sin permitir ocultar `Todos`/`Favoritos`)
+- [x] Tests puros: `visibleCategoriesFor` (5 tests; 132 en total, 0 fallos) + `All`/`Favorites` no se ocultan
+- [x] Limpiar el preview cuando el canal sale de la categoría (`clearPreviewIfChannelLeftCategory`)
 - [ ] Verificar en dispositivo: cambiar categoría, el contador, el foco, y que el preview no quede colgado
 
 ---
