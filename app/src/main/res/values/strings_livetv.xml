@@ -24,6 +24,7 @@
     <string name="live_tv_play_failed_no_streams">This channel has no available source</string>
     <string name="live_tv_play_failed_resolve">The addon could not be reached</string>
     <string name="live_tv_preview_loading">Loading preview…</string>
+    <string name="live_tv_adult_filter_on">Adult content filter on (keyword-based) — %1 channels hidden</string>
     <string name="live_tv_guide_failed">Guide: %1$s — %2$s</string>
     <string name="live_tv_guide_reason_download">could not be downloaded</string>
     <string name="live_tv_guide_reason_too_large">the file is too large</string>

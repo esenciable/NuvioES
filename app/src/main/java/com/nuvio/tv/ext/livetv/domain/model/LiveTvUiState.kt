@@ -74,6 +74,15 @@ data class LiveTvUiState(
     val guideFailure: EpgFailure? = null,
     /** Catalogs that could not be read. Surfaced instead of swallowed. */
     val failedCatalogs: Int = 0,
+    /**
+     * Whether the adult filter is applied. On by default.
+     *
+     * Stated in the UI rather than left implicit, and stated honestly: it is a keyword filter, not a
+     * guarantee, and a household that believes otherwise is worse off than one that was told.
+     */
+    val adultFilterActive: Boolean = true,
+    /** How many channels the filter removed, so its effect is visible instead of mysterious. */
+    val hiddenChannelCount: Int = 0,
     /** The channel whose streams are being resolved, so the row can say so instead of looking stuck. */
     val resolvingChannelKey: String? = null,
     /** Why the last attempt to open a channel failed, if it did. */

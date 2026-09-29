@@ -130,6 +130,16 @@ private fun ChannelList(
             color = NuvioTheme.colors.TextSecondary
         )
 
+        // Say the filter is on, and say what it actually is. A household that believes a keyword list is
+        // a guarantee is worse off than one that was told.
+        if (state.adultFilterActive) {
+            Text(
+                text = stringResource(R.string.live_tv_adult_filter_on, state.hiddenChannelCount),
+                style = MaterialTheme.typography.labelMedium,
+                color = NuvioTheme.colors.TextSecondary
+            )
+        }
+
         // The guide's state is stated rather than implied. "Downloaded but carries no programming for
         // these channels" and "the download failed" look identical on a row, and the difference is the
         // whole diagnosis.

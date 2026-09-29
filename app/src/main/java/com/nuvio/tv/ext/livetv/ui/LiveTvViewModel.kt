@@ -12,6 +12,7 @@ import com.nuvio.tv.ext.livetv.data.LiveTvPreviewCache
 import com.nuvio.tv.ext.livetv.data.epg.EpgRepository
 import com.nuvio.tv.ext.livetv.data.epg.EpgSnapshot
 import com.nuvio.tv.ext.livetv.data.epg.EpgSyncResult
+import com.nuvio.tv.ext.livetv.domain.AdultChannelFilter
 import com.nuvio.tv.ext.livetv.domain.EpgSourceDiscovery
 import com.nuvio.tv.ext.livetv.domain.LiveTvCatalog
 import com.nuvio.tv.ext.livetv.domain.LiveTvRows
@@ -86,7 +87,10 @@ class LiveTvViewModel @Inject constructor(
 
     private var catalogs: List<LiveTvCatalog> = emptyList()
     private var installedAddons: List<Addon> = emptyList()
+    private var loadedChannels: List<LiveTvChannel> = emptyList()
+    /** What every consumer sees: list, preview and playback all read this one, already filtered. */
     private var channels: List<LiveTvChannel> = emptyList()
+    private var hideAdultChannels: Boolean = true
     private var guide: EpgSnapshot = EpgSnapshot.EMPTY
     private var epgSources: List<EpgSource> = emptyList()
 
@@ -192,7 +196,8 @@ class LiveTvViewModel @Inject constructor(
                 return@launch
             }
 
-            channels = loaded.channels
+            loadedChannels = loaded.channels
+            applyAdultFilter()
             epgSources = epgSourcesFor(catalogs)
             publish(
                 status = if (channels.isEmpty()) LiveTvStatus.EMPTY else LiveTvStatus.READY,
@@ -215,6 +220,21 @@ class LiveTvViewModel @Inject constructor(
                 message = null,
                 failedCatalogs = loaded.failedCatalogs
             )
+        }
+    }
+
+    /**
+     * The adult filter runs exactly here.
+     *
+     * Everything downstream reads [channels], so the list, the preview resolver and the play action all
+     * see the same filtered set and cannot disagree about it. The reference fork checked in four separate
+     * places and still leaked through the handoff to the fullscreen player.
+     */
+    private fun applyAdultFilter() {
+        channels = if (hideAdultChannels) {
+            loadedChannels.filterNot(AdultChannelFilter::isAdult)
+        } else {
+            loadedChannels
         }
     }
 
@@ -303,6 +323,8 @@ class LiveTvViewModel @Inject constructor(
                 guideProgrammeCount = guide.guide.totalProgramsParsed,
                 guideLoaded = !guide.isEmpty,
                 failedCatalogs = failedCatalogs,
+                adultFilterActive = hideAdultChannels,
+                hiddenChannelCount = loadedChannels.size - channels.size,
                 guideFailure = epgRepository.state.value.lastFailure,
                 errorMessage = message
             )
