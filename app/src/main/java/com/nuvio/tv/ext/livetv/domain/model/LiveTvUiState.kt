@@ -3,6 +3,7 @@ package com.nuvio.tv.ext.livetv.domain.model
 import com.nuvio.tv.ext.livetv.data.epg.EpgFailure
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayableStream
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
+import com.nuvio.tv.ext.livetv.domain.model.EpgSource
 
 /** One programme placed on the timeline. */
 data class LiveTvProgramme(
@@ -83,6 +84,10 @@ data class LiveTvUiState(
     val adultFilterActive: Boolean = true,
     /** How many channels the filter removed, so its effect is visible instead of mysterious. */
     val hiddenChannelCount: Int = 0,
+    /** Every guide source there is, so the settings screen can offer them one by one. */
+    val epgSources: List<EpgSource> = emptyList(),
+    /** Which of those the user turned off. */
+    val disabledEpgSourceIds: Set<String> = emptySet(),
     /** The channel whose streams are being resolved, so the row can say so instead of looking stuck. */
     val resolvingChannelKey: String? = null,
     /** Why the last attempt to open a channel failed, if it did. */

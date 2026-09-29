@@ -9,6 +9,7 @@ import com.nuvio.tv.domain.repository.StreamRepository
 import com.nuvio.tv.ext.livetv.data.AddonStreamResolver
 import com.nuvio.tv.ext.livetv.data.CatalogChannelLoader
 import com.nuvio.tv.ext.livetv.data.LiveTvPreviewCache
+import com.nuvio.tv.ext.livetv.data.LiveTvStore
 import com.nuvio.tv.ext.livetv.data.epg.EpgRepository
 import com.nuvio.tv.ext.livetv.data.epg.EpgSnapshot
 import com.nuvio.tv.ext.livetv.data.epg.EpgSyncResult
@@ -18,6 +19,7 @@ import com.nuvio.tv.ext.livetv.domain.LiveTvCatalog
 import com.nuvio.tv.ext.livetv.domain.LiveTvRows
 import com.nuvio.tv.ext.livetv.domain.TvCatalogSelector
 import com.nuvio.tv.ext.livetv.domain.model.EpgSource
+import com.nuvio.tv.ext.livetv.domain.model.EpgSourceOrigin
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategory
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategoryId
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
@@ -68,11 +70,13 @@ class LiveTvViewModel @Inject constructor(
     addonRepository: AddonRepository,
     catalogRepository: CatalogRepository,
     epgRepository: EpgRepository,
-    streamRepository: StreamRepository
+    streamRepository: StreamRepository,
+    liveTvStore: LiveTvStore
 ) : ViewModel() {
 
     private val addonRepository = addonRepository
     private val epgRepository = epgRepository
+    private val liveTvStore = liveTvStore
     private val channelLoader = CatalogChannelLoader(catalogRepository)
     private val streamResolver = AddonStreamResolver(streamRepository)
     private val previewCache = LiveTvPreviewCache()
@@ -93,6 +97,9 @@ class LiveTvViewModel @Inject constructor(
     private var hideAdultChannels: Boolean = true
     private var guide: EpgSnapshot = EpgSnapshot.EMPTY
     private var epgSources: List<EpgSource> = emptyList()
+    private var disabledEpgSourceIds: Set<String> = emptySet()
+    /** What the last sync actually fetched, so a settings change only re-fetches when it should. */
+    private var lastSyncedEpgSourceIds: List<String> = emptyList()
 
     /** Favourites arrive with the settings screen; empty means "none marked", not "unknown". */
     private var favorites: Set<String> = emptySet()
@@ -101,6 +108,37 @@ class LiveTvViewModel @Inject constructor(
     init {
         refresh()
         observeFocusedChannel()
+        observeSettings()
+    }
+
+    /**
+     * Settings are stored per profile, so they are observed rather than read once: another screen, or
+     * another device sharing the profile, can change them.
+     */
+    private fun observeSettings() {
+        viewModelScope.launch {
+            liveTvStore.hideAdultChannels.collect { hide ->
+                if (hide == hideAdultChannels) return@collect
+                hideAdultChannels = hide
+                applyAdultFilter()
+                publishIfSettled()
+            }
+        }
+        viewModelScope.launch {
+            liveTvStore.disabledEpgSourceIds.collect { disabled ->
+                if (disabled == disabledEpgSourceIds) return@collect
+                disabledEpgSourceIds = disabled
+                syncEpgSources()
+            }
+        }
+    }
+
+    fun setAdultFilter(hide: Boolean) {
+        viewModelScope.launch { liveTvStore.setHideAdultChannels(hide) }
+    }
+
+    fun setEpgSourceEnabled(sourceId: String, enabled: Boolean) {
+        viewModelScope.launch { liveTvStore.setEpgSourceEnabled(sourceId, enabled) }
     }
 
     /**
@@ -198,29 +236,51 @@ class LiveTvViewModel @Inject constructor(
 
             loadedChannels = loaded.channels
             applyAdultFilter()
-            epgSources = epgSourcesFor(catalogs)
             publish(
                 status = if (channels.isEmpty()) LiveTvStatus.EMPTY else LiveTvStatus.READY,
                 message = null,
                 failedCatalogs = loaded.failedCatalogs
             )
 
-            if (channels.isEmpty() || epgSources.isEmpty()) return@launch
-
-            // The guide loads after the list is already on screen. A sync downloads tens of megabytes
-            // and there is no reason to make the user wait for programming before seeing channels.
-            guide = runCatching { epgRepository.sync(epgSources) }
-                .getOrNull()
-                ?.let { it as? EpgSyncResult.Success }
-                ?.snapshot
-                ?: guide
-
-            publish(
-                status = LiveTvStatus.READY,
-                message = null,
-                failedCatalogs = loaded.failedCatalogs
-            )
+            syncEpgSources()
         }
+    }
+
+    /**
+     * Re-discovers the guide sources and syncs only when the set actually changed.
+     *
+     * Idempotent on purpose: the settings observer and the initial load both land here, and a toggle
+     * should re-fetch because the user asked for it -- not because two paths happened to run.
+     */
+    private suspend fun syncEpgSources() {
+        if (installedAddons.isEmpty()) return
+
+        epgSources = EpgSourceDiscovery.discover(
+            addons = installedAddons.map { it.baseUrl to it.displayName },
+            userSources = emptyList(),
+            disabledIds = disabledEpgSourceIds
+        )
+        publishIfSettled()
+
+        val sourceIds = epgSources.map { it.id }
+        if (sourceIds == lastSyncedEpgSourceIds || epgSources.isEmpty()) return
+        lastSyncedEpgSourceIds = sourceIds
+
+        // The guide loads after the list is already on screen. A sync downloads tens of megabytes and
+        // there is no reason to make the user wait for programming before seeing channels.
+        guide = runCatching { epgRepository.sync(epgSources) }
+            .getOrNull()
+            ?.let { it as? EpgSyncResult.Success }
+            ?.snapshot
+            ?: guide
+
+        publishIfSettled()
+    }
+
+    private fun publishIfSettled() {
+        val status = _state.value.status
+        if (status == LiveTvStatus.LOADING) return
+        publish(status = status, message = _state.value.errorMessage)
     }
 
     /**
@@ -239,25 +299,13 @@ class LiveTvViewModel @Inject constructor(
     }
 
     /**
-     * Only the addons that actually publish live television.
+     * The country fallbacks are a third party's servers: on offer, not on by default.
      *
-     * Deriving a guide URL from **every** installed addon is wrong, and the device proved it: a subtitles
-     * addon has no `/epg.xml`, so asking it returns a 404 that is reported as "could not be downloaded"
-     * and buries the answer for the addon that matters. Scoped to the TV catalogs already selected, the
-     * failure list describes reality instead of noise.
-     *
-     * The third-party country fallbacks stay out for now: reaching an unrelated host on every start needs
-     * the disclosure and the opt-out that come with the settings screen (RF-38), and shipping one without
-     * the other would be sending the user's IP somewhere they never agreed to. An addon's own guide raises
-     * no such question.
+     * They are real value -- they cover channels the addon's own guide misses -- but ten downloads of
+     * tens of megabytes and an IP handed to a host unconnected to Nuvio is the user's decision, not a
+     * default. The settings screen explains what they are and turns them on one at a time; the addon's
+     * own guide needs no such consent.
      */
-    private fun epgSourcesFor(catalogs: List<LiveTvCatalog>): List<EpgSource> =
-        catalogs.map { it.addonBaseUrl to it.addonName }
-            .distinct()
-            .mapNotNull { (baseUrl, addonName) ->
-                EpgSourceDiscovery.fromAddon(baseUrl, addonName)
-            }
-
     fun selectCategory(categoryId: LiveTvCategoryId) {
         selectedCategory = categoryId
         publish(status = _state.value.status, message = _state.value.errorMessage)
@@ -325,6 +373,8 @@ class LiveTvViewModel @Inject constructor(
                 failedCatalogs = failedCatalogs,
                 adultFilterActive = hideAdultChannels,
                 hiddenChannelCount = loadedChannels.size - channels.size,
+                epgSources = epgSources,
+                disabledEpgSourceIds = disabledEpgSourceIds,
                 guideFailure = epgRepository.state.value.lastFailure,
                 errorMessage = message
             )

@@ -70,12 +70,24 @@ fun LiveTvScreen(
     onManageAddons: () -> Unit,
     onRetry: () -> Unit,
     onPlayChannel: (String) -> Unit,
-    onChannelFocused: (String) -> Unit
+    onChannelFocused: (String) -> Unit,
+    onSetAdultFilter: (Boolean) -> Unit,
+    onSetEpgSourceEnabled: (String, Boolean) -> Unit
 ) {
-    BackHandler { onBack() }
+    var showSettings by remember { mutableStateOf(false) }
+
+    // Back closes the pane and stays on the screen, which is what a panel owes the user.
+    BackHandler { if (showSettings) showSettings = false else onBack() }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        when (state.status) {
+        if (showSettings) {
+            LiveTvSettingsPane(
+                state = state,
+                onSetAdultFilter = onSetAdultFilter,
+                onSetEpgSourceEnabled = onSetEpgSourceEnabled
+            )
+        } else {
+            when (state.status) {
             LiveTvStatus.LOADING -> CenteredMessage(stringResource(R.string.live_tv_loading))
 
             LiveTvStatus.EMPTY -> EmptyState(
@@ -95,8 +107,10 @@ fun LiveTvScreen(
             LiveTvStatus.READY -> ChannelList(
                 state = state,
                 onPlayChannel = onPlayChannel,
-                onChannelFocused = onChannelFocused
+                onChannelFocused = onChannelFocused,
+                onOpenSettings = { showSettings = true }
             )
+        }
         }
     }
 }
@@ -105,7 +119,8 @@ fun LiveTvScreen(
 private fun ChannelList(
     state: LiveTvUiState,
     onPlayChannel: (String) -> Unit,
-    onChannelFocused: (String) -> Unit
+    onChannelFocused: (String) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val listFocusRequester = remember { FocusRequester() }
     val firstKey = state.channels.firstOrNull()?.channel?.stableKey
@@ -124,11 +139,36 @@ private fun ChannelList(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(NuvioTheme.spacing.xl)) {
-        Text(
-            text = stringResource(R.string.live_tv_channels_count, state.totalChannelCount),
-            style = MaterialTheme.typography.titleMedium,
-            color = NuvioTheme.colors.TextSecondary
-        )
+        // The settings control sits above the list on purpose: entry focus still lands on the first
+        // channel, and UP from there reaches it. Putting it before the list would have it take the
+        // focus the list is supposed to get.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.live_tv_channels_count, state.totalChannelCount),
+                style = MaterialTheme.typography.titleMedium,
+                color = NuvioTheme.colors.TextSecondary,
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = onOpenSettings,
+                colors = ButtonDefaults.colors(
+                    containerColor = NuvioTheme.colors.Surface,
+                    focusedContainerColor = NuvioTheme.colors.SecondaryVariant,
+                    contentColor = NuvioTheme.colors.TextPrimary,
+                    focusedContentColor = NuvioTheme.colors.OnSecondaryVariant
+                ),
+                shape = ButtonDefaults.shape(RoundedCornerShape(50))
+            ) {
+                Text(
+                    text = stringResource(R.string.live_tv_settings_open),
+                    modifier = Modifier.padding(horizontal = NuvioTheme.spacing.md),
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
 
         // Say the filter is on, and say what it actually is. A household that believes a keyword list is
         // a guarantee is worse off than one that was told.

@@ -57,6 +57,8 @@ fun LiveTvRoute(navController: NavController) {
         onManageAddons = { navController.navigate(Screen.AddonManager.route) },
         onRetry = viewModel::refresh,
         onPlayChannel = viewModel::playChannel,
-        onChannelFocused = viewModel::onChannelFocused
+        onChannelFocused = viewModel::onChannelFocused,
+        onSetAdultFilter = viewModel::setAdultFilter,
+        onSetEpgSourceEnabled = viewModel::setEpgSourceEnabled
     )
 }

@@ -23,4 +23,15 @@
     <string name="live_tv_guide_reason_empty">no se encontró programación</string>
     <string name="live_tv_guide_no_programmes">Guía: se descargó, pero no trae programación para estos canales</string>
     <string name="live_tv_guide_programmes">%1$d programas</string>
+    <string name="live_tv_settings_open">Ajustes</string>
+    <string name="live_tv_settings_title">Ajustes de TV en vivo</string>
+    <string name="live_tv_settings_subtitle">Qué lee esta pantalla, y qué oculta</string>
+    <string name="live_tv_settings_parental">Control parental</string>
+    <string name="live_tv_settings_adult_filter">Ocultar canales adultos</string>
+    <string name="live_tv_settings_adult_filter_sub">Filtro por palabras clave: agarra los nombres conocidos, no todos</string>
+    <string name="live_tv_settings_sources">Fuentes de guía</string>
+    <string name="live_tv_settings_sources_disclosure">Las guías por país vienen de epgshare01.online, un tercero. Activa solo lo que necesites.</string>
+    <string name="live_tv_settings_source_addon">De tus addons</string>
+    <string name="live_tv_settings_source_third_party">Tercero (epgshare01.online)</string>
+    <string name="live_tv_settings_source_user">Agregada por ti</string>
 </resources>
