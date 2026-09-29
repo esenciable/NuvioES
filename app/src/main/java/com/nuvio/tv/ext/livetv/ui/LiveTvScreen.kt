@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,6 +47,7 @@ import com.nuvio.tv.ext.livetv.data.epg.EpgFailure
 import com.nuvio.tv.ext.livetv.data.epg.EpgFailureReason
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannelRow
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvPreview
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
 import com.nuvio.tv.ui.theme.NuvioTheme
@@ -67,7 +69,8 @@ fun LiveTvScreen(
     onBack: () -> Unit,
     onManageAddons: () -> Unit,
     onRetry: () -> Unit,
-    onPlayChannel: (String) -> Unit
+    onPlayChannel: (String) -> Unit,
+    onChannelFocused: (String) -> Unit
 ) {
     BackHandler { onBack() }
 
@@ -89,7 +92,11 @@ fun LiveTvScreen(
                 onAction = onRetry
             )
 
-            LiveTvStatus.READY -> ChannelList(state = state, onPlayChannel = onPlayChannel)
+            LiveTvStatus.READY -> ChannelList(
+                state = state,
+                onPlayChannel = onPlayChannel,
+                onChannelFocused = onChannelFocused
+            )
         }
     }
 }
@@ -97,7 +104,8 @@ fun LiveTvScreen(
 @Composable
 private fun ChannelList(
     state: LiveTvUiState,
-    onPlayChannel: (String) -> Unit
+    onPlayChannel: (String) -> Unit,
+    onChannelFocused: (String) -> Unit
 ) {
     val listFocusRequester = remember { FocusRequester() }
     val firstKey = state.channels.firstOrNull()?.channel?.stableKey
@@ -160,7 +168,10 @@ private fun ChannelList(
                         row = row,
                         resolving = state.resolvingChannelKey == row.channel.stableKey,
                         onClick = { onPlayChannel(row.channel.stableKey) },
-                        onFocused = { focusedKey = row.channel.stableKey },
+                        onFocused = {
+                            focusedKey = row.channel.stableKey
+                            onChannelFocused(row.channel.stableKey)
+                        },
                         modifier = if (isFirst) Modifier.focusRequester(listFocusRequester) else Modifier
                     )
                 }
@@ -170,6 +181,8 @@ private fun ChannelList(
 
             ChannelDetails(
                 row = state.channels.firstOrNull { it.channel.stableKey == focusedKey },
+                preview = state.preview,
+                previewFailure = state.previewFailure,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -233,7 +246,12 @@ private fun ChannelRow(
 }
 
 @Composable
-private fun ChannelDetails(row: LiveTvChannelRow?, modifier: Modifier = Modifier) {
+private fun ChannelDetails(
+    row: LiveTvChannelRow?,
+    preview: LiveTvPreview?,
+    previewFailure: LiveTvPlayFailure?,
+    modifier: Modifier = Modifier
+) {
     if (row == null) {
         Column(
             modifier = modifier,
@@ -270,6 +288,41 @@ private fun ChannelDetails(row: LiveTvChannelRow?, modifier: Modifier = Modifier
                 style = MaterialTheme.typography.labelMedium,
                 color = NuvioTheme.colors.TextSecondary
             )
+        }
+
+        // The split-screen preview: what this channel is broadcasting right now. Muted, and built by
+        // the composition, so it only exists while a channel with a resolved stream is on screen.
+        Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
+        if (preview != null && preview.channelKey == row.channel.stableKey) {
+            LiveTvPreviewSurface(
+                url = preview.url,
+                headers = preview.headers,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(NuvioTheme.colors.BackgroundElevated)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(NuvioTheme.colors.BackgroundElevated),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = when (previewFailure) {
+                        LiveTvPlayFailure.NO_STREAMS -> stringResource(R.string.live_tv_play_failed_no_streams)
+                        LiveTvPlayFailure.RESOLVE_FAILED -> stringResource(R.string.live_tv_play_failed_resolve)
+                        null -> stringResource(R.string.live_tv_preview_loading)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = NuvioTheme.colors.TextSecondary,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
 
         // The programming is the point of the guide being there at all, so it gets the prominent slot.

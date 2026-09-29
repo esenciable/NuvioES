@@ -14,6 +14,7 @@
     <string name="live_tv_up_next">A continuación: %1$s</string>
     <string name="live_tv_play_failed_no_streams">Este canal no tiene ninguna fuente disponible</string>
     <string name="live_tv_play_failed_resolve">No se pudo consultar el addon</string>
+    <string name="live_tv_preview_loading">Cargando vista previa…</string>
     <string name="live_tv_guide_failed">Guía: %1$s — %2$s</string>
     <string name="live_tv_guide_reason_download">no se pudo descargar</string>
     <string name="live_tv_guide_reason_too_large">el archivo es demasiado grande</string>

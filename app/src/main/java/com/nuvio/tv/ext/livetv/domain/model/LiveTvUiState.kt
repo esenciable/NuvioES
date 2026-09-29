@@ -78,6 +78,10 @@ data class LiveTvUiState(
     val resolvingChannelKey: String? = null,
     /** Why the last attempt to open a channel failed, if it did. */
     val playFailure: LiveTvPlayFailure? = null,
+    /** What the preview panel is playing. Null means nothing resolved (yet, or at all). */
+    val preview: LiveTvPreview? = null,
+    /** Why the preview is empty when it should not be. */
+    val previewFailure: LiveTvPlayFailure? = null,
     val errorMessage: String? = null
 )
 
@@ -90,4 +94,11 @@ data class LiveTvUiState(
 data class LiveTvPlayRequest(
     val channel: LiveTvChannel,
     val stream: LiveTvPlayableStream
+)
+
+/** What the split-screen panel is showing. */
+data class LiveTvPreview(
+    val channelKey: String,
+    val url: String,
+    val headers: Map<String, String>?
 )

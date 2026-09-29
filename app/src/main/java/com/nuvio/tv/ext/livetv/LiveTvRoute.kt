@@ -56,6 +56,7 @@ fun LiveTvRoute(navController: NavController) {
         onBack = { navController.popBackStack() },
         onManageAddons = { navController.navigate(Screen.AddonManager.route) },
         onRetry = viewModel::refresh,
-        onPlayChannel = viewModel::playChannel
+        onPlayChannel = viewModel::playChannel,
+        onChannelFocused = viewModel::onChannelFocused
     )
 }

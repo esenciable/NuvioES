@@ -8,6 +8,7 @@ import com.nuvio.tv.domain.repository.CatalogRepository
 import com.nuvio.tv.domain.repository.StreamRepository
 import com.nuvio.tv.ext.livetv.data.AddonStreamResolver
 import com.nuvio.tv.ext.livetv.data.CatalogChannelLoader
+import com.nuvio.tv.ext.livetv.data.LiveTvPreviewCache
 import com.nuvio.tv.ext.livetv.data.epg.EpgRepository
 import com.nuvio.tv.ext.livetv.data.epg.EpgSnapshot
 import com.nuvio.tv.ext.livetv.data.epg.EpgSyncResult
@@ -21,16 +22,22 @@ import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategoryId
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannelRow
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPlayRequest
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvPreview
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
+import com.nuvio.tv.ext.livetv.domain.LiveTvPlayableStream
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
 import com.nuvio.tv.ext.livetv.domain.model.inCategory
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
@@ -48,6 +55,13 @@ import javax.inject.Inject
  * The loader is built here rather than injected. It needs nothing but [CatalogRepository], which Hilt
  * already provides, so a binding for it would be a module that exists to describe one constructor call.
  */
+/**
+ * Long enough that skimming a list never resolves anything, short enough that settling on a channel
+ * feels immediate. The reference fork used 450 ms and started audio at full volume.
+ */
+private const val PREVIEW_DEBOUNCE_MS = 700L
+
+@OptIn(FlowPreview::class)
 @HiltViewModel
 class LiveTvViewModel @Inject constructor(
     addonRepository: AddonRepository,
@@ -60,6 +74,9 @@ class LiveTvViewModel @Inject constructor(
     private val epgRepository = epgRepository
     private val channelLoader = CatalogChannelLoader(catalogRepository)
     private val streamResolver = AddonStreamResolver(streamRepository)
+    private val previewCache = LiveTvPreviewCache()
+
+    private val _focusedChannel = MutableStateFlow<String?>(null)
 
     private val _state = MutableStateFlow(LiveTvUiState())
     val state: StateFlow<LiveTvUiState> = _state.asStateFlow()
@@ -79,7 +96,66 @@ class LiveTvViewModel @Inject constructor(
 
     init {
         refresh()
+        observeFocusedChannel()
     }
+
+    /**
+     * Reports which row holds focus, so the preview can follow it.
+     *
+     * Focus is reported rather than owned: it is not application state, and the composable is the only
+     * thing that knows it changed.
+     */
+    fun onChannelFocused(stableKey: String) {
+        _focusedChannel.value = stableKey
+    }
+
+    /**
+     * Resolves the preview for whatever the user settles on.
+     *
+     * Debounced, because a preview makes every pause in D-pad movement a stream request. [collectLatest]
+     * then abandons the previous resolve as soon as focus moves on, so a fast pass down the list does
+     * not leave a queue of requests behind it. The addon runs its own token bucket for exactly this
+     * reason, which is a strong hint that the client should not be the one spending that budget.
+     */
+    private fun observeFocusedChannel() {
+        viewModelScope.launch {
+            _focusedChannel
+                .debounce(PREVIEW_DEBOUNCE_MS)
+                .distinctUntilChanged()
+                .collectLatest { stableKey ->
+                    if (stableKey != null) resolvePreview(stableKey)
+                }
+        }
+    }
+
+    private suspend fun resolvePreview(stableKey: String) {
+        if (stableKey == _state.value.preview?.channelKey) return
+
+        previewCache.get(stableKey)?.let { cached ->
+            _state.update { it.copy(preview = cached.toPreview(stableKey), previewFailure = null) }
+            return
+        }
+
+        val channel = channels.firstOrNull { it.stableKey == stableKey } ?: return
+        val addon = installedAddons.firstOrNull { it.baseUrl == channel.addonBaseUrl }
+            ?: return failPreviewWith(LiveTvPlayFailure.RESOLVE_FAILED)
+
+        val stream = runCatching { streamResolver.resolve(addon, channel) }.getOrNull()
+        if (stream == null) return failPreviewWith(LiveTvPlayFailure.NO_STREAMS)
+
+        previewCache.put(stableKey, stream)
+        _state.update { it.copy(preview = stream.toPreview(stableKey), previewFailure = null) }
+    }
+
+    private fun failPreviewWith(failure: LiveTvPlayFailure) {
+        _state.update { it.copy(preview = null, previewFailure = failure) }
+    }
+
+    private fun LiveTvPlayableStream.toPreview(channelKey: String) = LiveTvPreview(
+        channelKey = channelKey,
+        url = url,
+        headers = headers
+    )
 
     fun refresh() {
         viewModelScope.launch {
@@ -95,6 +171,9 @@ class LiveTvViewModel @Inject constructor(
 
             catalogs = TvCatalogSelector.select(addons)
             installedAddons = addons
+            // The channel set is about to change, so anything resolved for the old one is stale.
+            previewCache.clear()
+            _state.update { it.copy(preview = null, previewFailure = null) }
             if (catalogs.isEmpty()) {
                 // The addons answered and none publishes live television. That is EMPTY, not an error:
                 // the reference fork showed "no channels found" for a network failure too, so the user
