@@ -198,6 +198,43 @@ mock de `CatalogRepositoryTypeTest` no stubbea `getCustomPosterEnabledScreens()`
 
 ---
 
+## Estado real (verificado en dispositivo, no aspiracional)
+
+Todo lo de abajo se probó en un **Android TV arm64** con el addon del dueño instalado, no solo con tests.
+
+| Qué | Estado | Evidencia |
+| --- | --- | --- |
+| Entrada en el sidebar + ruta propia | ✅ | 4 enganches, 33/40 líneas |
+| Canales desde los addons instalados | ✅ | **1170 canales**, catálogos `type: tv` |
+| Guía EPG derivada del addon, sin configurar nada | ✅ | **13152 programas**, títulos reales |
+| Emparejamiento estricto canal↔guía | ✅ | por id, alias, nombre normalizado único |
+| Reproducción en el reproductor de upstream | ✅ | video en vivo real; Atrás vuelve a la lista |
+| Panel de vista previa split-screen | ✅ | muteado, liberado con la pantalla |
+| Foco estable (sin saltos sin input) | ✅ | 4 capturas, 90 s, siempre la fila 1 |
+| Ajustes: filtro adulto + fuentes con divulgación | ✅ | `Esencial Play` encendida; `Argentina`/`México`/`Colombia` visibles y apagadas |
+| Grilla EPG de horarios | ✅ | regla horaria, columna fija, celdas reales |
+| **117 tests de la feature** | ✅ | 0 fallos |
+
+### Lo que falta, y por qué
+
+| Pendiente | Motivo |
+| --- | --- |
+| **Promover el pin al tag `1.1.0` estable** | Todavía no existe: upstream está en `1.1.0-beta.2`. Es el paso previo a cualquier release |
+| **Keystore de release y firma** | Decisión del dueño: custodia y contraseña |
+| **URLs XMLTV propias** | Diferido a propósito: escribir una URL con el control remoto es mala experiencia; merece algo como el flujo QR de upstream |
+| **Gaveta de zapping** | Descartada con argumento: vive en pantalla completa, y la pantalla completa es el reproductor de upstream → sería un 5.º enganche o duplicar un reproductor peor |
+| **PRs a upstream** | El crash de `ProfileSelectionViewModel` y sus tests que no compilan |
+
+## Cosas que conviene no olvidar al retomar
+
+1. **`nuvioes/known-test-failures.txt`**: el pin de upstream **viene rojo**, con 18 fallos. Al rebasar, compará contra esa lista y no contra cero.
+2. **`nuvioes/sync-upstream.sh --tag-latest`**: rebase sobre un tag nuevo. `SYNC_BRANCH=otra ./nuvioes/sync-upstream.sh` lo ensaya sin tocar la rama.
+3. **`nuvioes/focus-probe.py`**: qué fila tiene el foco, leyendo un `screencap` crudo.
+4. **`uiautomator dump` no es confiable**: tras unas docenas de llamadas falla con `UiAutomationService already registered` y después devuelve **árboles obsoletos**. Para manejar la TV: `adb shell input keyevent` + `screencap`.
+5. **Verificá `mCurrentFocus` antes de mandar teclas**: `monkey` puede dejar la app **visible pero sin foco**, y entonces todo keyevent va a otra app.
+6. **`adb logcat -c` antes de cada prueba** y después contar `FATAL EXCEPTION`. Una app muerta y una sin foco se parecen mucho en una captura.
+7. **Nunca interpolar cadenas con `$` por argumentos de shell entre comillas dobles**: `%1$d` se volvió `%1` y eso **mataba la app** al renderizar.
+
 ## Estado de las fases
 
 | Fase | Descripción | Estado |
@@ -205,7 +242,7 @@ mock de `CatalogRepositoryTypeTest` no stubbea `getCustomPosterEnabledScreens()`
 | **F0** | Harness: pin, modelo de ramas, scripts de sync, guardarraíles de CI | **en curso** |
 | F1 | Esqueleto `ext/livetv` + los 4 enganches + `strings_livetv.xml` | pendiente |
 | F2 | Datos y EPG (addon propio, fuentes XMLTV, parser con topes) | pendiente |
-| F3 | Interfaz: lista, panel de vista previa, pantalla completa, grilla EPG | pendiente |
+| F3 | Interfaz: lista, panel de vista previa, pantalla completa, grilla EPG | **✅ cerrada** |
 | F4 | Calidad: filtro parental sin fugas, estados de error, presupuesto de rendimiento | pendiente |
 | F5 | Promoción al tag `1.1.0` final, keystore propia, release firmada | pendiente |
 
