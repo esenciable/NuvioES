@@ -1,5 +1,7 @@
 package com.nuvio.tv.ext.livetv.domain.model
 
+import com.nuvio.tv.ext.livetv.data.epg.EpgFailure
+
 /** One programme placed on the timeline. */
 data class LiveTvProgramme(
     val title: String,
@@ -61,8 +63,15 @@ data class LiveTvUiState(
     val selectedChannelKey: String? = null,
     val totalChannelCount: Int = 0,
     val guideProgrammeCount: Int = 0,
-    /** How many EPG sources failed on the last sync. Zero is the good case. */
-    val failedEpgSources: Int = 0,
+    /** Whether any guide loaded at all. Distinguishes "nothing tried yet" from "loaded but empty". */
+    val guideLoaded: Boolean = false,
+    /**
+     * Why the guide is missing, when it is. Null means either the guide loaded or nothing was tried --
+     * the UI shows programming in the first case and nothing in the second, so the two never need telling
+     * apart. Surfaced instead of swallowed: a guide that fails silently is indistinguishable from a guide
+     * with nothing to say.
+     */
+    val guideFailure: EpgFailure? = null,
     /** Catalogs that could not be read. Surfaced instead of swallowed. */
     val failedCatalogs: Int = 0,
     val errorMessage: String? = null

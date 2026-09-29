@@ -42,6 +42,8 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.nuvio.tv.R
+import com.nuvio.tv.ext.livetv.data.epg.EpgFailure
+import com.nuvio.tv.ext.livetv.data.epg.EpgFailureReason
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannelRow
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
@@ -117,6 +119,22 @@ private fun ChannelList(
             style = MaterialTheme.typography.titleMedium,
             color = NuvioTheme.colors.TextSecondary
         )
+        // The guide's state is stated rather than implied. "Downloaded but carries no programming for
+        // these channels" and "the download failed" look identical on a row, and the difference is the
+        // whole diagnosis.
+        val guideNote = when {
+            state.guideFailure != null -> guideFailureText(state.guideFailure)
+            state.guideLoaded && state.guideProgrammeCount == 0 -> stringResource(R.string.live_tv_guide_no_programmes)
+            state.guideProgrammeCount > 0 -> stringResource(R.string.live_tv_guide_programmes, state.guideProgrammeCount)
+            else -> null
+        }
+        guideNote?.let { note ->
+            Text(
+                text = note,
+                style = MaterialTheme.typography.labelMedium,
+                color = NuvioTheme.colors.TextSecondary
+            )
+        }
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
 
         Row(modifier = Modifier.fillMaxSize()) {
@@ -257,6 +275,23 @@ private fun ChannelDetails(row: LiveTvChannelRow?, modifier: Modifier = Modifier
                 color = NuvioTheme.colors.TextSecondary
             )
         }
+    }
+}
+
+@Composable
+private fun guideFailureText(failure: EpgFailure): String {
+    val reason = stringResource(
+        when (failure.reason) {
+            EpgFailureReason.DOWNLOAD_FAILED -> R.string.live_tv_guide_reason_download
+            EpgFailureReason.TOO_LARGE -> R.string.live_tv_guide_reason_too_large
+            EpgFailureReason.MALFORMED -> R.string.live_tv_guide_reason_malformed
+            EpgFailureReason.NOTHING_PARSED -> R.string.live_tv_guide_reason_empty
+        }
+    )
+    return if (failure.sourceName.isBlank()) {
+        reason
+    } else {
+        stringResource(R.string.live_tv_guide_failed, failure.sourceName, reason)
     }
 }
 

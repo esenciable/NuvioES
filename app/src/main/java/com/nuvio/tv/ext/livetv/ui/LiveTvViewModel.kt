@@ -2,13 +2,18 @@ package com.nuvio.tv.ext.livetv.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.CatalogRepository
 import com.nuvio.tv.ext.livetv.data.CatalogChannelLoader
+import com.nuvio.tv.ext.livetv.data.epg.EpgRepository
 import com.nuvio.tv.ext.livetv.data.epg.EpgSnapshot
+import com.nuvio.tv.ext.livetv.data.epg.EpgSyncResult
+import com.nuvio.tv.ext.livetv.domain.EpgSourceDiscovery
 import com.nuvio.tv.ext.livetv.domain.LiveTvCatalog
 import com.nuvio.tv.ext.livetv.domain.LiveTvRows
 import com.nuvio.tv.ext.livetv.domain.TvCatalogSelector
+import com.nuvio.tv.ext.livetv.domain.model.EpgSource
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategory
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategoryId
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
@@ -39,10 +44,12 @@ import javax.inject.Inject
 @HiltViewModel
 class LiveTvViewModel @Inject constructor(
     addonRepository: AddonRepository,
-    catalogRepository: CatalogRepository
+    catalogRepository: CatalogRepository,
+    epgRepository: EpgRepository
 ) : ViewModel() {
 
     private val addonRepository = addonRepository
+    private val epgRepository = epgRepository
     private val channelLoader = CatalogChannelLoader(catalogRepository)
 
     private val _state = MutableStateFlow(LiveTvUiState())
@@ -50,6 +57,8 @@ class LiveTvViewModel @Inject constructor(
 
     private var catalogs: List<LiveTvCatalog> = emptyList()
     private var channels: List<LiveTvChannel> = emptyList()
+    private var guide: EpgSnapshot = EpgSnapshot.EMPTY
+    private var epgSources: List<EpgSource> = emptyList()
 
     /** Favourites arrive with the settings screen; empty means "none marked", not "unknown". */
     private var favorites: Set<String> = emptySet()
@@ -91,13 +100,50 @@ class LiveTvViewModel @Inject constructor(
             }
 
             channels = loaded.channels
+            epgSources = epgSourcesFor(catalogs)
             publish(
                 status = if (channels.isEmpty()) LiveTvStatus.EMPTY else LiveTvStatus.READY,
                 message = null,
                 failedCatalogs = loaded.failedCatalogs
             )
+
+            if (channels.isEmpty() || epgSources.isEmpty()) return@launch
+
+            // The guide loads after the list is already on screen. A sync downloads tens of megabytes
+            // and there is no reason to make the user wait for programming before seeing channels.
+            guide = runCatching { epgRepository.sync(epgSources) }
+                .getOrNull()
+                ?.let { it as? EpgSyncResult.Success }
+                ?.snapshot
+                ?: guide
+
+            publish(
+                status = LiveTvStatus.READY,
+                message = null,
+                failedCatalogs = loaded.failedCatalogs
+            )
         }
     }
+
+    /**
+     * Only the addons that actually publish live television.
+     *
+     * Deriving a guide URL from **every** installed addon is wrong, and the device proved it: a subtitles
+     * addon has no `/epg.xml`, so asking it returns a 404 that is reported as "could not be downloaded"
+     * and buries the answer for the addon that matters. Scoped to the TV catalogs already selected, the
+     * failure list describes reality instead of noise.
+     *
+     * The third-party country fallbacks stay out for now: reaching an unrelated host on every start needs
+     * the disclosure and the opt-out that come with the settings screen (RF-38), and shipping one without
+     * the other would be sending the user's IP somewhere they never agreed to. An addon's own guide raises
+     * no such question.
+     */
+    private fun epgSourcesFor(catalogs: List<LiveTvCatalog>): List<EpgSource> =
+        catalogs.map { it.addonBaseUrl to it.addonName }
+            .distinct()
+            .mapNotNull { (baseUrl, addonName) ->
+                EpgSourceDiscovery.fromAddon(baseUrl, addonName)
+            }
 
     fun selectCategory(categoryId: LiveTvCategoryId) {
         selectedCategory = categoryId
@@ -120,7 +166,7 @@ class LiveTvViewModel @Inject constructor(
         )
         val rows: List<LiveTvChannelRow> = LiveTvRows.build(
             channels = visibleChannels,
-            guide = EpgSnapshot.EMPTY,
+            guide = guide,
             aliases = aliases,
             favorites = favorites,
             nowEpochMs = System.currentTimeMillis()
@@ -136,7 +182,10 @@ class LiveTvViewModel @Inject constructor(
                 selectedCategory = selectedCategory,
                 selectedChannelKey = current.selectedChannelKey.takeIf { selectionStillVisible },
                 totalChannelCount = channels.size,
+                guideProgrammeCount = guide.guide.totalProgramsParsed,
+                guideLoaded = !guide.isEmpty,
                 failedCatalogs = failedCatalogs,
+                guideFailure = epgRepository.state.value.lastFailure,
                 errorMessage = message
             )
         }

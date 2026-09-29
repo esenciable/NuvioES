@@ -10,4 +10,11 @@
     <string name="live_tv_channels_count">%1$d canales</string>
     <string name="live_tv_no_guide">Sin datos de guía</string>
     <string name="live_tv_select_channel">Elige un canal para ver sus detalles</string>
+    <string name="live_tv_guide_failed">Guía: %1$s — %2$s</string>
+    <string name="live_tv_guide_reason_download">no se pudo descargar</string>
+    <string name="live_tv_guide_reason_too_large">el archivo es demasiado grande</string>
+    <string name="live_tv_guide_reason_malformed">el documento es ilegible</string>
+    <string name="live_tv_guide_reason_empty">no se encontró programación</string>
+    <string name="live_tv_guide_no_programmes">Guía: se descargó, pero no trae programación para estos canales</string>
+    <string name="live_tv_guide_programmes">%1$d programas</string>
 </resources>

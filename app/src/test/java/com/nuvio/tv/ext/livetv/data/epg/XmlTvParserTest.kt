@@ -152,8 +152,7 @@ class XmlTvParserTest {
         val xml = document(channel("c1", "Uno") + programme("c1", 0L, HOUR, "Programa"))
 
         val failure = assertThrows(EpgLimitExceededException::class.java) { parse(xml, maxBytes = 64) }
-        assertTrue(failure.message.orEmpty().contains("byte limit"))
-    }
+        assertTrue(failure.message.orEmpty().contains("byte limit"))    }
 
     @Test
     fun `inflates a gzipped document transparently`() {

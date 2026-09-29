@@ -12,6 +12,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/** Why a source did not contribute. A code, not a sentence: the repository has no `Context` and
+ * nothing user-visible may be composed in Kotlin (RF-53). The UI turns this into a localised string. */
+enum class EpgFailureReason {
+    DOWNLOAD_FAILED,
+    TOO_LARGE,
+    MALFORMED,
+    NOTHING_PARSED
+}
+
+data class EpgFailure(
+    val sourceName: String,
+    val reason: EpgFailureReason
+)
+
 /** Reads the raw bytes of an XMLTV document. Null means the source could not be read. */
 fun interface EpgDocumentFetcher {
     suspend fun fetch(url: String): ByteArray?
@@ -44,12 +58,12 @@ data class EpgState(
     val sourcesTried: Int = 0,
     val sourcesFailed: Int = 0,
     /** Non-null when something went wrong, even if the swap still succeeded with fewer sources. */
-    val lastFailure: String? = null
+    val lastFailure: EpgFailure? = null
 )
 
 sealed interface EpgSyncResult {
     data class Success(val snapshot: EpgSnapshot, val sourcesFailed: Int) : EpgSyncResult
-    data class Failed(val reason: String) : EpgSyncResult
+    data class Failed(val failure: EpgFailure) : EpgSyncResult
 }
 
 /**
@@ -108,13 +122,13 @@ class EpgRepository(
         val guides = mutableListOf<XmlTvGuide>()
         val usedSourceIds = mutableListOf<String>()
         var failures = 0
-        var lastFailure: String? = null
+        var lastFailure: EpgFailure? = null
 
         for (source in sources) {
             val bytes = loadBytes(source, now, forceRefresh)
             if (bytes == null) {
                 failures++
-                lastFailure = "${source.name}: no se pudo descargar"
+                lastFailure = EpgFailure(source.name, EpgFailureReason.DOWNLOAD_FAILED)
                 continue
             }
             val parsed = try {
@@ -125,11 +139,11 @@ class EpgRepository(
                 )
             } catch (limit: EpgLimitExceededException) {
                 failures++
-                lastFailure = "${source.name}: ${limit.message}"
+                lastFailure = EpgFailure(source.name, EpgFailureReason.TOO_LARGE)
                 continue
             } catch (malformed: Exception) {
                 failures++
-                lastFailure = "${source.name}: ${malformed.message ?: "documento ilegible"}"
+                lastFailure = EpgFailure(source.name, EpgFailureReason.MALFORMED)
                 continue
             }
 
@@ -140,15 +154,16 @@ class EpgRepository(
 
         return if (guides.isEmpty()) {
             // Nothing parsed: keep whatever the user was already looking at.
+            val failure = lastFailure ?: EpgFailure("", EpgFailureReason.NOTHING_PARSED)
             _state.update {
                 it.copy(
                     syncing = false,
                     sourcesTried = sources.size,
                     sourcesFailed = failures,
-                    lastFailure = lastFailure ?: "ninguna fuente produjo una guía"
+                    lastFailure = failure
                 )
             }
-            EpgSyncResult.Failed(lastFailure ?: "ninguna fuente produjo una guía")
+            EpgSyncResult.Failed(failure)
         } else {
             val merged = EpgGuideMerge.merge(guides)
             val snapshot = EpgSnapshot(

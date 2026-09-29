@@ -57,7 +57,7 @@ class EpgRepositoryTest {
 
         assertTrue(result is EpgSyncResult.Failed)
         assertSame("the previous guide must survive a total failure", published, repository.state.value.snapshot)
-        assertNotNull(repository.state.value.lastFailure)
+        assertEquals(EpgFailureReason.DOWNLOAD_FAILED, repository.state.value.lastFailure?.reason)
     }
 
     @Test
@@ -127,7 +127,7 @@ class EpgRepositoryTest {
         assertEquals(1, (result as EpgSyncResult.Success).sourcesFailed)
         assertEquals(1, repository.state.value.snapshot.guide.channels.size)
         assertEquals(listOf(SOURCE_ID), repository.state.value.snapshot.sourceIds)
-        assertNotNull("the failure is still reported", repository.state.value.lastFailure)
+        assertEquals("the failure is still reported", EpgFailureReason.DOWNLOAD_FAILED, repository.state.value.lastFailure?.reason)
     }
 
     @Test
@@ -146,7 +146,7 @@ class EpgRepositoryTest {
         // Both blow the tiny cap, so nothing parses and the guide stays empty -- but the failure is
         // reported rather than swallowed.
         assertTrue(result is EpgSyncResult.Failed)
-        assertTrue(repository.state.value.lastFailure.orEmpty().contains("byte limit"))
+        assertEquals(EpgFailureReason.TOO_LARGE, repository.state.value.lastFailure?.reason)
     }
 
     @Test
