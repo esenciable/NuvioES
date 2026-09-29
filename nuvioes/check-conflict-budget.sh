@@ -12,12 +12,19 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-BASE_TAG="${1:-$(tr -d '[:space:]' < UPSTREAM_BASE)}"
-PIN_REF="upstream-pin"
+BASE_TAG="$(tr -d '[:space:]' < UPSTREAM_BASE 2>/dev/null || echo '?')"
 
-if ! git rev-parse -q --verify "$PIN_REF" >/dev/null 2>&1; then
-  echo "ERROR: falta el tag $PIN_REF (marca el commit de upstream sobre el que construimos)." >&2
-  echo "       Creálo con: git tag -f $PIN_REF $(cat UPSTREAM_BASE)" >&2
+# Ref contra la que medimos NUESTRO delta. Por defecto, el pin de upstream.
+#
+# Durante un sync hay que pasar el tag destino: el pin todavía no se movió, así que
+# medir contra el pin viejo cuenta TODA la deriva de upstream como si fuera nuestra
+# y el guardarraíl falla con cientos de archivos ajenos.
+DIFF_BASE="${1:-upstream-pin}"
+
+if ! git rev-parse -q --verify "$DIFF_BASE" >/dev/null 2>&1; then
+  echo "ERROR: no existe la ref '$DIFF_BASE'." >&2
+  echo "       Por defecto se compara contra el tag upstream-pin." >&2
+  echo "       Creálo con: git tag -f upstream-pin \$(cat UPSTREAM_BASE)" >&2
   exit 1
 fi
 
@@ -69,16 +76,16 @@ while IFS= read -r f; do
   fi
   VIOLATIONS+=("$f")
   RC=1
-done < <(git diff --name-only "$PIN_REF"..HEAD)
+done < <(git diff --name-only "$DIFF_BASE"..HEAD)
 
 LINES=0
 for f in "${ALLOWED_UPSTREAM_FILES[@]}"; do
-  n="$(git diff --numstat "$PIN_REF"..HEAD -- "$f" | awk '{s+=$1+$2} END {print s+0}')"
+  n="$(git diff --numstat "$DIFF_BASE"..HEAD -- "$f" | awk '{s+=$1+$2} END {print s+0}')"
   LINES=$((LINES + n))
 done
 
-echo "Base de upstream (UPSTREAM_BASE): $BASE_TAG"
-echo "Pin ($PIN_REF):                   $(git rev-parse --short "$PIN_REF" 2>/dev/null || echo '?')"
+echo "UPSTREAM_BASE (pin nominal): $BASE_TAG"
+echo "Comparando contra:           $DIFF_BASE ($(git rev-parse --short "$DIFF_BASE" 2>/dev/null || echo '?'))"
 echo
 
 if [ "${#VIOLATIONS[@]}" -gt 0 ]; then
