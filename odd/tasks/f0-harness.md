@@ -104,6 +104,32 @@ nunca se commitea**: el harness parece completo y no está versionado.
 
 ---
 
+## Evidencia: commits
+
+Rama `feat/f0-harness`, base `upstream-pin` = `d8c500175` (tag `1.1.0-beta.2`). Autor de todos:
+`lordmacu`, sin pie de IA.
+
+| SHA | Commit |
+| --- | --- |
+| `2e46f7046` | `chore: pin upstream base and add the conflict-budget guardrail` |
+| `688c71f18` | `chore: add upstream sync tooling and drift detection CI` |
+| `5f8315119` | `chore: add the JDK wrapper and document the fork model` |
+| `0ac6d9655` | `fix(nuvioes): correct stale script paths after moving tooling to nuvioes/` |
+| `59e124a22` | `fix(nuvioes): make sync-upstream.sh fail loudly instead of rebasing nothing` |
+| `1be4d3649` | `fix(nuvioes): measure our delta against the target base, not the stale pin` |
+| `2c515607d` | `docs(odd): close F0 with the rehearsal evidence and the bugs it found` |
+
+Los últimos cuatro commits son consecuencia directa del ensayo del rebase. **Sin ensayar el camino feliz,
+los tres bugs habrían llegado a F1 con el harness aparentando estar completo.**
+
+## Pendiente antes de F1
+
+- **Merge de `feat/f0-harness` a `main`** — lo decide el dueño.
+- **Publicar**: crear el fork real en GitHub y pushear. Requiere OK explícito (es publicación).
+  Ver «Pendiente de decisión del dueño» al final de este documento.
+
+---
+
 ## Bitácora
 
 | Fecha | Qué |
