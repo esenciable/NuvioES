@@ -1,13 +1,23 @@
 name: upstream-drift
 
-# Detección temprana de deriva (PRD NuvioES sección 9.4).
+# Detección temprana de deriva (PRD NuvioES, sección 9.4).
 #
 # Upstream publica ~300 commits cada 10 días. Enterarse del conflicto el día que
-# aparece cuesta minutos; descubrirlo a los tres meses cuesta días. Este job intenta
-# el rebase contra el tag estable más nuevo y abre un issue si falla.
+# aparece cuesta minutos; descubrirlo a los tres meses cuesta días.
 #
-# También busca señales de que upstream esté implementando TV en vivo propia, porque
-# eso cambiaría la estrategia del fork (PRD sección 9.6).
+# Dos correcciones respecto de la primera versión, ambas encontradas al ejecutarlo:
+#
+#   1. Seleccionaba el "tag estable más nuevo" filtrando `^X.Y.Z$`, lo que EXCLUYE
+#      nuestro propio pin (`1.1.0-beta.2`). Elegía entonces `1.0.0`, que es más
+#      VIEJO, y rebaseaba hacia atrás: un resultado sin ningún sentido. Ahora usa
+#      el tag más nuevo de cualquiera (pre-releases incluidas), que es la señal más
+#      temprana posible.
+#   2. El aviso por `issues` no puede funcionar: los forks tienen los issues
+#      DESHABILITADOS por defecto, así que el paso fallaba y el aviso nunca llegaba.
+#      Ahora el resultado siempre va al resumen del job, y el job FALLA cuando hay
+#      conflicto o señales (un job programado que falla notifica al dueño, y eso no
+#      depende de ninguna configuración del repositorio). El issue queda como
+#      intento best-effort.
 
 on:
   schedule:
@@ -25,49 +35,72 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # Anclado explícitamente a nuestra rama de integración.
-          # Un evento `schedule` hace checkout de la rama por DEFECTO del repositorio, y
-          # en un fork de NuvioTV esa rama es `dev`. Sin este anclaje, el job diario
-          # rebasearía la rama equivocada y reportaría un resultado sin sentido.
+          # Anclado explícitamente a nuestra rama de integración: un evento
+          # `schedule` hace checkout de la rama por DEFECTO del repositorio, y en un
+          # fork de NuvioTV esa rama es `dev`.
           ref: nuvioes
 
       - name: Traer upstream
         run: |
-          git remote add upstream https://github.com/NuvioMedia/NuvioTV.git || true
+          git remote add upstream https://github.com/NuvioMedia/NuvioTV.git 2>/dev/null || true
           git fetch upstream --tags --prune
 
-      - name: Elegir el tag estable más nuevo
+      - name: Elegir el tag objetivo
         id: target
         run: |
-          TAG="$(git tag -l --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
-          if [ -z "$TAG" ]; then
-            echo "found=false" >> "$GITHUB_OUTPUT"
+          OLD="$(tr -d '[:space:]' < UPSTREAM_BASE)"
+
+          # El tag más nuevo de cualquiera, pre-releases incluidas. `-v:refname`
+          # ordena por versión, así que 1.1.0 queda después de 1.1.0-beta.2.
+          NEWEST_ANY="$(git tag -l --sort=-v:refname | head -1)"
+
+          # Informativo: el tag ESTABLE más nuevo (sin sufijo de pre-release).
+          NEWEST_STABLE="$(git tag -l --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+
+          echo "pin=$OLD"                      >> "$GITHUB_OUTPUT"
+          echo "newest_any=$NEWEST_ANY"        >> "$GITHUB_OUTPUT"
+          echo "newest_stable=$NEWEST_STABLE"  >> "$GITHUB_OUTPUT"
+
+          if [ "$NEWEST_ANY" = "$OLD" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "found=true" >> "$GITHUB_OUTPUT"
-            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Intentar el rebase sobre el tag nuevo
+          {
+            echo "### Estado del pin"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Pin actual (\`UPSTREAM_BASE\`) | \`$OLD\` |"
+            echo "| Tag más nuevo (cualquiera) | \`$NEWEST_ANY\` |"
+            echo "| Tag estable más nuevo | \`$NEWEST_STABLE\` |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Intentar el rebase sobre el tag más nuevo
         id: rebase
-        if: steps.target.outputs.found == 'true'
+        if: steps.target.outputs.skip == 'false'
         run: |
-          OLD="$(tr -d '[:space:]' < UPSTREAM_BASE)"
-          NEW="${{ steps.target.outputs.tag }}"
-          if [ "$OLD" = "$NEW" ]; then
-            echo "clean=uptodate" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          OLD="${{ steps.target.outputs.pin }}"
+          NEW="${{ steps.target.outputs.newest_any }}"
+
+          echo "==> Comparando: $OLD -> $NEW"
+          BEHIND="$(git rev-list --count "$OLD..$NEW")"
+          echo "==> Upstream avanzó $BEHIND commits"
+
           git config user.email "ci@nuvio-es.local"
           git config user.name "nuvio-es-ci"
+
           if git rebase --onto "$NEW" "$OLD" HEAD >/dev/null 2>&1; then
             echo "clean=true" >> "$GITHUB_OUTPUT"
+            echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
           else
             git rebase --abort >/dev/null 2>&1 || true
-            CONFLICTS="$(git diff --name-only "$OLD" "$NEW" -- ':!app/src/main/java/com/nuvio/tv/ext/livetv' | head -40 || true)"
             echo "clean=false" >> "$GITHUB_OUTPUT"
             {
               echo "conflicts<<EOF"
-              echo "$CONFLICTS"
+              git diff --name-only "$OLD" "$NEW" | grep -v '^app/src/main/java/com/nuvio/tv/ext/livetv/' | head -40 || true
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
           fi
@@ -75,23 +108,57 @@ jobs:
       - name: Buscar señales de TV en vivo en upstream
         id: signals
         run: |
-          HITS="$(git ls-tree -r --name-only upstream/dev \
-            | grep -iE 'livetv|live_tv|iptv|xmltv|epg' || true)"
+          HITS="$(git ls-tree -r --name-only upstream/dev | grep -iE 'livetv|live_tv|iptv|xmltv|epg' || true)"
           {
             echo "hits<<EOF"
             echo "$HITS"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Abrir issue si hay conflicto o señales
+      - name: Resumen
+        run: |
+          CLEAN="${{ steps.rebase.outputs.clean }}"
+          CONFLICTS="${{ steps.rebase.outputs.conflicts }}"
+          HITS="${{ steps.signals.outputs.hits }}"
+          {
+            if [ "${{ steps.target.outputs.skip }}" = "true" ]; then
+              echo "### Sin deriva"
+              echo ""
+              echo "El pin ya está en el tag más nuevo. No hay nada que rebasar."
+            elif [ "$CLEAN" = "true" ]; then
+              echo "### Rebase limpio ✅"
+              echo ""
+              echo "Nuestra serie de parches se reaplica sin conflicto sobre \`${{ steps.target.outputs.newest_any }}\`"
+              echo "(${{ steps.rebase.outputs.behind }} commits de avance de upstream)."
+              echo ""
+              echo "Para actualizar de verdad: \`./nuvioes/sync-upstream.sh --tag-latest\`"
+            else
+              echo "### Rebase con conflictos ❌"
+              echo ""
+              echo '```'
+              echo "$CONFLICTS"
+              echo '```'
+            fi
+            if [ -n "$HITS" ]; then
+              echo ""
+              echo "### ⚠️ Posibles señales de TV en vivo en upstream/dev"
+              echo ""
+              echo '```'
+              echo "$HITS"
+              echo '```'
+              echo ""
+              echo "Si upstream implementa TV en vivo propia, la estrategia del fork cambia (PRD 9.6)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Intentar abrir un issue (best-effort)
         if: steps.rebase.outputs.clean == 'false' || steps.signals.outputs.hits != ''
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
-            const tag = '${{ steps.target.outputs.tag }}';
             const clean = '${{ steps.rebase.outputs.clean }}';
-            const conflicts = `${{ steps.rebase.outputs.conflicts }}`;
-            const signals = `${{ steps.signals.outputs.hits }}`;
+            const tag = '${{ steps.target.outputs.newest_any }}';
             const title = clean === 'false'
               ? `[sync] No se pudo rebasar sobre ${tag}`
               : `[sync] Upstream publicó posibles señales de TV en vivo`;
@@ -101,16 +168,21 @@ jobs:
               `Tag objetivo: \`${tag}\``,
               `Rebase limpio: \`${clean}\``,
               '',
-              conflicts ? `### Archivos con conflicto\n\`\`\`\n${conflicts}\n\`\`\`` : '',
-              signals ? `### Posibles señales de TV en vivo en upstream/dev\n\`\`\`\n${signals}\n\`\`\`` : '',
+              `${{ steps.rebase.outputs.conflicts }}`.trim()
+                ? `### Archivos con conflicto\n\`\`\`\n${{ steps.rebase.outputs.conflicts }}\n\`\`\`` : '',
+              `${{ steps.signals.outputs.hits }}`.trim()
+                ? `### Posibles señales de TV en vivo\n\`\`\`\n${{ steps.signals.outputs.hits }}\n\`\`\`` : '',
               '',
-              'Procedimiento: `docs/04-runbook-sync-upstream.md`.',
-              'Si el rebase falla, correr `./nuvioes/sync-upstream.sh --tag-latest` localmente.',
+              'Corré `./nuvioes/sync-upstream.sh --tag-latest` localmente.',
             ].join('\n');
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title,
-              body,
-              labels: ['sync-upstream'],
+              title, body, labels: ['sync-upstream'],
             });
+
+      - name: Fallar el job si hay algo que atender
+        if: steps.rebase.outputs.clean == 'false' || steps.signals.outputs.hits != ''
+        run: |
+          echo "Hay deriva o señales que atender. Mirá el resumen del job." >&2
+          exit 1
