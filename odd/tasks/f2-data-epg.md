@@ -98,30 +98,64 @@ no necesita.
 > El premio: un usuario que ya tiene el addon instalado obtiene guía **sin pegar ninguna URL**. Es la
 > diferencia entre una función y un ejercicio de configuración.
 
-### T4 — Repositorio de EPG con swap atómico (parcial)
+### T4 — Repositorio de EPG con swap atómico ✅
 
-**Hecha la parte de emparejamiento**, con **10 tests** (`EpgChannelNames`, `EpgGuideIndex`). Falta el
-repositorio (descarga, caché en disco, single-flight y swap atómico).
+**Cerrada.** `EpgRepository`, `EpgGuideMerge`, `EpgDiskCache` + emparejamiento. **27 tests** en esta tarea.
 
+- [x] Descarga + caché en disco con TTL y single-flight
+- [x] **Swap atómico**: descargar y parsear primero, y recién entonces reemplazar
+- [x] Publicación por `StateFlow` inmutable
 - [x] Emparejamiento **estricto** canal↔guía, en **tres niveles**
 - [x] Alias explícito del usuario, que gana sobre cualquier conjetura
 - [x] **Sin coincidencia por subcadena, nunca**
-- [ ] Descarga + caché en disco con TTL + single-flight
-- [ ] **Swap atómico**: descargar y parsear primero, y recién entonces reemplazar
-- [ ] Publicación por `StateFlow` inmutable
 
-> ### Tres niveles, y por qué el primero es el bueno
+> ### Las dos garantías que definen el repositorio
+>
+> **El swap ocurre solo si algo se parseó.** El fork limpiaba todas las cachés *antes* de descargar, así
+> que si fallaban todas las fuentes **tiraba una guía que funcionaba**, dejaba la UI vacía y encima
+> marcaba la sincronización como exitosa. Acá una corrida fallida **no cambia nada visible**: el
+> `snapshot` conserva su valor anterior y solo se mueven los campos de error. Hay un test que lo fija con
+> `assertSame` sobre el snapshot publicado.
+>
+> **Llamadas concurrentes comparten una corrida.** Varias pantallas pueden pedir sync mientras hay uno en
+> vuelo; compartir el mismo `Deferred` hace que las fuentes se descarguen **una vez**, no una por
+> llamador. El addon paga cada request aguas arriba, así que duplicarlas no es solo desperdicio.
+> El test lanza tres `sync` concurrentes y exige **una** descarga.
+>
+> ### La caché guarda los bytes CRUDOS
+>
+> No el XML inflado: un feed de país puede inflarse a cientos de MB y el fork escribía exactamente eso a
+> disco por fuente. Guardando los bytes comprimidos la caché queda chica, y igual el parser infla y
+> aplica el tope en cada lectura.
+>
+> La escritura pasa por un archivo temporal y un rename: un archivo a medio escribir se le entregaría al
+> parser y se reportaría como *documento malformado*, un error que no tiene nada que ver con la causa real.
+
+> ### Tres defectos propios que encontraron los tests
+>
+> Ninguno se veía leyendo el código.
+>
+> 1. **El merge perdía los contadores**: filtraba las guías sin contenido, así que una fuente cuyos
+>    programas cayeron **todos** fuera de la ventana perdía el `programsSkippedOutOfWindow` — justo el
+>    caso donde el contador es la **única** evidencia de por qué la guía se ve vacía.
+> 2. **La caché mezclaba dos relojes**: el TTL se medía contra el `lastModified` del sistema de archivos
+>    mientras la comparación usaba el reloj inyectado. Ahora la escritura **estampa el reloj del
+>    llamador**, y los dos coinciden.
+> 3. **Un test que pasaba por la razón equivocada**: el helper vararg copiaba el mapa de respuestas, así
+>    que mutarlo no cambiaba lo que devolvía el fetcher y la segunda sincronización era un **éxito**
+>    disfrazado de fallo esperado. Ahora se le pasa la **misma instancia**.
+
+> ### Por qué el primer nivel de emparejamiento es el bueno
 >
 > 1. **Id exacto.** La guía del addon propio se genera a partir de los mismos canales que se listan, así
 >    que sus `<channel id>` coinciden con los nuestros. Cuando pega, el match es exacto y sin juicio.
-> 2. **Alias del usuario.** Mapeo explícito, gana siempre.
+> 2. **Alias del usuario.** Mapeo explícito, gana siempre; uno que apunta a un id inexistente **se ignora**.
 > 3. **Nombre normalizado único.** Las guías de terceros traen ids ajenos (tipo gatotv), así que el
 >    único puente es el nombre.
 >
 > El fork de referencia caía a **coincidencia por subcadena en cualquier dirección** con "el primero
 > gana" sobre un mapa sin orden: `Globo` se ataba a `Globonews` o `Globoplay` y el usuario veía la
-> programación de **otro canal** sin ninguna señal de que algo estaba mal. Ese fallback no existe acá,
-> y hay un test que lo fija.
+> programación de **otro canal** sin ninguna señal. Ese fallback no existe acá.
 >
 > **La ambigüedad se rechaza, no se resuelve.** Si dos canales distintos de la guía normalizan al mismo
 > nombre, ese nombre queda envenenado y nunca matchea. Elegir uno sería adivinar, y una guía equivocada
