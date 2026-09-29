@@ -105,8 +105,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1065
-        versionName = "1.1.0-beta.2"
+        // NuvioES: identidad de versión propia. El updater in-app compara el SemVer del tag de
+        // release contra VERSION_NAME y NUNCA usa versionCode, así que sin un sufijo propio que
+        // incremente, una build instalada vuelve a recibir la oferta de la misma release para
+        // siempre. Forma: `<base-upstream>-nuvioes.<n>` (el build metadata `+x` NO sirve:
+        // VersionUtils lo descarta al comparar). Ver NUVIO-ES.md.
+        val nuvioesBuild = 1
+        versionCode = 1065 * 100 + nuvioesBuild
+        versionName = "1.1.0-beta.2-nuvioes.$nuvioesBuild"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")

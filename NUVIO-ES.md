@@ -120,6 +120,51 @@ claves son opcionales para compilar y **obligatorias para que la app hable con e
 
 ---
 
+## Versionado (y por qué no se deja el de upstream)
+
+`versionName` **no es cosmético**: el updater in-app compara el SemVer del tag de release contra
+`BuildConfig.VERSION_NAME`, y **el `versionCode` no participa de la decisión**
+(`app/src/main/java/com/nuvio/tv/updater/`). Si dejáramos el de upstream, una build instalada
+volvería a recibir la oferta de la misma release **para siempre**.
+
+```kotlin
+val nuvioesBuild = 1
+versionCode = 1065 * 100 + nuvioesBuild
+versionName = "1.1.0-beta.2-nuvioes.$nuvioesBuild"
+```
+
+### La forma del sufijo, y por qué es esa
+
+| Forma | ¿Sirve? | Por qué |
+| --- | --- | --- |
+| `<base>-nuvioes.<n>` | **Sí** | Pasa el regex de `VersionUtils`; ordena **por encima** de la base (el identificador alfanumérico `2-nuvioes` tiene más precedencia que el numérico `2`) y crece con `n` |
+| `<base>+nuvioes.<n>` | **No** | `VersionUtils` **descarta el build metadata** en `parse()`. Es correcto según SemVer, pero como marcador es inútil |
+
+Funciona igual con una base estable (`1.1.0-nuvioes.1`), sin condicionales.
+
+### Reglas
+
+1. **Al subir el pin de upstream hay que actualizar las dos constantes** (`1065` y `"1.1.0-beta.2"`).
+   Eso es **a propósito**: quedan como literales en un archivo de upstream, así que el salto de versión
+   **produce un conflicto visible** en el rebase y obliga a un cambio consciente en vez de arrastrar un
+   número viejo en silencio. Es un punto de conflicto esperado, no un accidente.
+2. **`nuvioesBuild` incrementa en cada release nuestra** sobre la misma base. No toques `versionName`
+   sin tocar `versionCode`: el mismo número alimenta a los dos.
+3. **El tag de release debe espejar la estabilidad de la base** (prerelease si la base lo es).
+   `UpdateChannel.defaultForVersion` pone el canal en BETA para versiones prerelease, y en canal STABLE
+   los prereleases **no son elegibles**: un tag no-prerelease sobre base prerelease dejaría a los
+   usuarios de STABLE sin ver la actualización.
+4. **`VERSION_NAME` viaja a terceros**: `SupabaseModule` arma `User-Agent: "NuvioTV/<VERSION_NAME>"` y
+   también lo usan `NetworkModule`, `MdbListModule`, `DeviceSessionRegistration` y Sentry. Por eso el
+   sufijo debe seguir siendo **SemVer válido**.
+5. **`versionCode = base × 100 + n`**: monotónico entre bases mientras `n < 100`, y no se cruza con nada.
+   La alternativa `base + n` se rompe cuando upstream salta y nosotros ya veníamos sumando.
+
+> El About de la app ya muestra `BuildConfig.VERSION_NAME`, así que esto se ve **sin tocar
+> `AboutScreen.kt`** — que habría sido un quinto enganche.
+
+---
+
 ## Estado de las fases
 
 | Fase | Descripción | Estado |
