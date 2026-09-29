@@ -20,7 +20,6 @@ BASE_TAG="$(tr -d '[:space:]' < UPSTREAM_BASE 2>/dev/null || echo '?')"
 # medir contra el pin viejo cuenta TODA la deriva de upstream como si fuera nuestra
 # y el guardarraíl falla con cientos de archivos ajenos.
 DIFF_BASE="${1:-upstream-pin}"
-
 if ! git rev-parse -q --verify "$DIFF_BASE" >/dev/null 2>&1; then
   echo "ERROR: no existe la ref '$DIFF_BASE'." >&2
   echo "       Por defecto se compara contra el tag upstream-pin." >&2
@@ -67,6 +66,11 @@ RC=0
 TOUCHED=0
 VIOLATIONS=()
 
+# Se compara contra el ÁRBOL DE TRABAJO, no contra HEAD.
+#
+# `git diff <ref>` (sin `..HEAD`) incluye lo que todavía no está commiteado, así que
+# el guardarraíl avisa MIENTRAS escribís, que es cuando importa. En un checkout
+# limpio de CI el resultado es idéntico a comparar contra HEAD.
 while IFS= read -r f; do
   [ -z "$f" ] && continue
   if is_ours "$f"; then continue; fi
@@ -76,11 +80,11 @@ while IFS= read -r f; do
   fi
   VIOLATIONS+=("$f")
   RC=1
-done < <(git diff --name-only "$DIFF_BASE"..HEAD)
+done < <(git diff --name-only "$DIFF_BASE")
 
 LINES=0
 for f in "${ALLOWED_UPSTREAM_FILES[@]}"; do
-  n="$(git diff --numstat "$DIFF_BASE"..HEAD -- "$f" | awk '{s+=$1+$2} END {print s+0}')"
+  n="$(git diff --numstat "$DIFF_BASE" -- "$f" | awk '{s+=$1+$2} END {print s+0}')"
   LINES=$((LINES + n))
 done
 
