@@ -39,9 +39,11 @@ semanas. Por eso:
 
 > **El quinto se agregó el 2026-09-29, con aprobación explícita del dueño**, y la excepción está
 escrita acá para que no se vuelva costumbre. Motivo: los ajustes de la feature deben vivir **donde el
-usuario ya busca ajustes**, no en un panel interno. Costo medido contra el fork: **~17 líneas** (import
-del ícono, miembro del enum `SettingsCategory`, bloque `SettingsSectionSpec`, entrada en el mapa de
-`FocusRequester` y rama del `when`). El presupuesto pasó de **33/40 a ~50/60**.
+usuario ya busca ajustes**, no en un panel interno. **Costo real medido: 18 líneas** (import del ícono,
+import del composable propio, miembro del enum `SettingsCategory`, bloque `SettingsSectionSpec`, entrada
+en el mapa de `FocusRequester` y rama del `when`) — una más que la estimación de ~17, por el import del
+composable. El presupuesto pasó de **33/40 a 51/60**: quedan **9 líneas** de margen, y **subir el techo
+otra vez es una decisión aparte**.
 
 | # | Archivo | Enlace |
 | --- | --- | --- |
@@ -211,7 +213,8 @@ Todo lo de abajo se probó en un **Android TV arm64** con el addon del dueño in
 
 | Qué | Estado | Evidencia |
 | --- | --- | --- |
-| Entrada en el sidebar + ruta propia | ✅ | 4 enganches, 33/40 líneas |
+| Entrada en el sidebar + ruta propia | ✅ | 4 enganches, 33/40 líneas (F1) |
+| Ajustes de la feature dentro de la pantalla de Ajustes | ✅ | 5 enganches, **51/60 líneas** (F6 T3) |
 | Canales desde los addons instalados | ✅ | **1170 canales**, catálogos `type: tv` |
 | Guía EPG derivada del addon, sin configurar nada | ✅ | **13152 programas**, títulos reales |
 | Emparejamiento estricto canal↔guía | ✅ | por id, alias, nombre normalizado único |

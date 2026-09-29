@@ -188,11 +188,16 @@ presupuesto**, así que se aprueba o no se hace.
 
 ### Tareas
 - [x] Decisión del dueño sobre el presupuesto: **aprobado**
-- [ ] `SettingsCategory.TV_CHANNELS` + spec + focusRequester + rama del `when`, con el panel reutilizado
-      tal cual (no reescribirlo)
-- [ ] Quitar el botón "Ajustes" del encabezado de nuestra pantalla (o dejarlo como atajo, a decidir)
+- [x] `SettingsCategory.TV_CHANNELS` + spec + focusRequester + rama del `when`, con el panel reutilizado
+      tal cual (no reescribirlo). **Medido: 18 líneas, 5/5 archivos, 51/60**. Commit `67152a924`
+- [x] Decisión: **el botón "Ajustes" del encabezado se queda como atajo.** Los dos caminos renderizan el
+      mismo panel sobre el mismo store, así que no pueden divergir, y el usuario está en TV en vivo
+      cuando quiere ajustes de TV en vivo
 - [ ] Verificar en dispositivo: Ajustes → TV en vivo → el panel, con foco correcto y Atrás que vuelve
-- [ ] Actualizar la tabla de enganches y el conteo en `NUVIO-ES.md` cuando esté hecho (medir, no estimar)
+      (**bloqueada**: el addon del dueño devuelve 502/timeout en todos los catálogos, así que no hay
+      categorías que listar; reverificar cuando vuelva)
+- [x] Actualizar la tabla de enganches y el conteo en `NUVIO-ES.md` cuando esté hecho (medido: **18 líneas,
+      51/60, 5 archivos**; el margen que queda es de 9 líneas)
 
 ---
 
