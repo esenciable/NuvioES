@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nav_live_tv">TV ao vivo</string>
+    <string name="live_tv_empty_title">Ainda não há canais</string>
+    <string name="live_tv_empty_desc">Os canais vêm dos addons que você já tem instalados.</string>
+    <string name="live_tv_empty_action">Gerenciar addons</string>
+</resources>

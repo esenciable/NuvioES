@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    NuvioES: strings for the Live TV feature.
+
+    This file is OURS. Android merges every .xml under res/values, so the feature
+    keeps its strings here and never touches upstream's strings.xml. That is what
+    keeps a Nuvio update free of translation conflicts: the reference fork added
+    its strings inside upstream's files and now carries four conflicted locale
+    files on every sync.
+-->
+<resources>
+    <string name="nav_live_tv">Live TV</string>
+    <string name="live_tv_empty_title">No channels yet</string>
+    <string name="live_tv_empty_desc">Channels come from the addons you already have installed.</string>
+    <string name="live_tv_empty_action">Manage addons</string>
+</resources>
