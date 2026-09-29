@@ -40,7 +40,7 @@ PENDING="$(git rev-list --count "$OLD_BASE..$SRC_BRANCH")"
 if [ "$PENDING" -eq 0 ]; then
   echo "ERROR: $SRC_BRANCH no tiene commits propios encima de $OLD_BASE." >&2
   echo "       No hay nada que sincronizar. Si tu trabajo está en otra rama, mergeala primero" >&2
-  echo "       o pasá SYNC_BRANCH=<rama>." >&2
+  echo "       o pasa SYNC_BRANCH=<rama>." >&2
   exit 1
 fi
 
@@ -103,7 +103,7 @@ if git rebase --onto "$TARGET_TAG" "$OLD_BASE" "$WORK"; then
   git tag -f "upstream-pin" "$WORK"
 
   echo
-  echo "==> Listo. Revisá el diff y probá en dispositivo, después:"
+  echo "==> Listo. Revisá el diff y prueba en dispositivo, después:"
   echo "      git switch $SRC_BRANCH && git merge --ff-only $WORK"
   echo "      git tag -f upstream-pin"
   echo "      git push origin $SRC_BRANCH --tags"

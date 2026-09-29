@@ -55,7 +55,7 @@ UPSTREAM_BASE                                  ← el tag de upstream sobre el q
 > `.mcp.json`, `AGENTS.md` y más, y después re-habilita con `!` sólo *sus propios* archivos. O sea que
 > un archivo nuestro en `scripts/` **se ignora en silencio y nunca se commitea**: el harness parece
 > completo y no está versionado. Por eso todo lo nuestro vive en `nuvioes/`, un directorio que upstream
-> no ignora. Si agregás tooling, verificá antes con `git check-ignore -v <ruta>`.
+> no ignora. Si agregas tooling, verifica antes con `git check-ignore -v <ruta>`.
 
 > **Por qué los textos van en `strings_livetv.xml` y no en `strings.xml`:** Android fusiona *todos* los
 > `.xml` de `res/values/`. Un archivo propio da cero conflictos de traducción al actualizar, aunque la
