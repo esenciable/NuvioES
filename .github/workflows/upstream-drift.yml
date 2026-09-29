@@ -50,9 +50,17 @@ jobs:
         run: |
           OLD="$(tr -d '[:space:]' < UPSTREAM_BASE)"
 
-          # El tag más nuevo de cualquiera, pre-releases incluidas. `-v:refname`
-          # ordena por versión, así que 1.1.0 queda después de 1.1.0-beta.2.
-          NEWEST_ANY="$(git tag -l --sort=-v:refname | head -1)"
+          # El tag más nuevo de cualquiera, pre-releases incluidas.
+          #
+          # Hay que FILTRAR por forma de versión. `--sort=-v:refname` pone primero
+          # los tags que NO son versiones (nuestro propio `upstream-pin`, por
+          # ejemplo), así que sin el filtro "el tag más nuevo" era `upstream-pin` y
+          # el job rebaseaba sobre nuestro propio tag informando "0 commits".
+          #
+          # Ojo: filtrar sólo por `^X.Y.Z$` tampoco sirve — eso excluye
+          # `1.1.0-beta.2`, que es justamente nuestro pin, y el job terminaba
+          # eligiendo `1.0.0`, más VIEJO, rebaseando hacia atrás.
+          NEWEST_ANY="$(git tag -l --sort=-v:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
 
           # Informativo: el tag ESTABLE más nuevo (sin sufijo de pre-release).
           NEWEST_STABLE="$(git tag -l --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
