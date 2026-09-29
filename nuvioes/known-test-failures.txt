@@ -1,0 +1,26 @@
+# Fallos de test CONOCIDOS en el pin de upstream.
+#
+# Medido en el pin puro (sin nada nuestro) en un worktree aparte.
+# Sirve para distinguir 'upstream ya venía rojo' de 'lo rompimos nosotros'.
+# Re-medir con:  ver NUVIO-ES.md, seccion 'Baseline de tests'.
+#
+# pin: 1.1.0-beta.2  (commit d8c500175)
+# pin: 1606 tests, 18 fallidos, 1 salteado
+CatalogRepositoryTypeTest.initial and paginated requests retain advertised Series type
+CollectionsDataStoreSourceMigrationTest.validation rejects trakt sources without list id
+CustomPosterUrlResolverTest.resolve BetterPosters returns null when IMDb id is missing
+DefaultAllocatorTest.testLateReleasedAllocationsMemoryLeak
+DolbyVisionBaseLayerPolicyTest.Samsung device on DV display still falls through to NATIVE_DV7
+DolbyVisionBaseLayerPolicyTest.non-Amazon device on DV display with DV81 decoder falls through to NATIVE_DV7
+FrameRateUtilsMkvSparseTracksTest.sparse Tracks fetch terminates the probe file with a stub Cluster
+LocalhostZeroCopyDataSourceTest.testHttpError404
+MatroskaAfrProbeTest.stub Cluster terminates Cluster-less head and resizes Segment
+NuvioExoPlayerPerformanceHelperTest.test 1 GB RAM tier classification
+NuvioExoPlayerPerformanceHelperTest.test 2 GB RAM tier classification
+NuvioExoPlayerPerformanceHelperTest.test default fallback values when RAM is zero or unknown
+PluginBinaryFetchTest.binary request and response preserve exact bytes
+PluginBinaryFetchTest.text request remains UTF8 encoded
+PostPlayRecommendationStateTest.loaded recommendation holds natural completion until overlay evaluation
+PostPlayRecommendationStateTest.post play returns to player only while its window is available
+TrackSelectionInvestigationTest.testBuildStreamInfoDataWithActiveVideoFormat
+TraktAuthServiceTest.refresh token 400 clears credentials and prevents another refresh

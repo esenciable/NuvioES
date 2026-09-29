@@ -165,6 +165,39 @@ Funciona igual con una base estable (`1.1.0-nuvioes.1`), sin condicionales.
 
 ---
 
+## Baseline de tests
+
+**El pin de upstream no viene verde.** Medido en el pin puro, en un worktree aparte: `1.1.0-beta.2`
+(`d8c500175`) tiene **1.606 tests con 18 fallos**. Los nombres exactos están en
+`nuvioes/known-test-failures.txt`.
+
+Importa porque, al rebasar, **una suite roja es lo esperado** y no debe confundirse con una regresión
+nuestra. La comparación correcta es contra ese archivo, no contra cero:
+
+| | Tests | Fallos |
+| --- | --- | --- |
+| Pin `d8c500175`, sin nada nuestro | 1.606 | **18** |
+| Nuestro árbol | 1.657 | **18** (los mismos 18) |
+
+```bash
+# Medir el baseline de un tag nuevo, sin tocar el árbol de trabajo
+git worktree add /tmp/baseline <tag>
+cp local.properties nuviotv.jks /tmp/baseline/
+(cd /tmp/baseline && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew :app:testFullDebugUnitTest --console=plain)
+# resultados en /tmp/baseline/app/build/test-results/testFullDebugUnitTest/
+git worktree remove --force /tmp/baseline
+
+# Y nuestros tests solos, que sí tienen que estar siempre verdes:
+./nuvioes/gradle.sh :app:testFullDebugUnitTest --tests 'com.nuvio.tv.ext.livetv.*'
+```
+
+No es sólo un entorno exótico: hay **drift propio de upstream**. `PluginBinaryFetchTest` llama a
+`PluginRuntime.performNativeFetch(...)` con una **firma que no existe** (`NoSuchMethodException`), y el
+mock de `CatalogRepositoryTypeTest` no stubbea `getCustomPosterEnabledScreens()`, un método que su propio
+`CatalogRepositoryImpl` ya invoca. Es material para un PR a upstream.
+
+---
+
 ## Estado de las fases
 
 | Fase | Descripción | Estado |

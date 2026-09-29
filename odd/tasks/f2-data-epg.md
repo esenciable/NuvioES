@@ -38,6 +38,10 @@ no necesita.
 
 ## Tareas
 
+> Las secciones van en el orden en que se hizo el trabajo, no en el orden del plan: el emparejamiento
+> estricto (T4) quedó resuelto antes que el parser (T3), porque el índice de la guía no depende del
+> parser.
+
 ### T1 — Modelo y descubrimiento de canales ✅
 
 **Cerrada.** `ext/livetv/domain/` con **17 tests en verde** (`LiveTvChannel`, `LiveTvCategory`, `TvCatalogSelector`, `LiveTvPaging`).
@@ -65,12 +69,66 @@ no necesita.
 >
 > El texto que se muestra viene de dos fuentes distintas y no se mezcla: las categorías propias (`All`, `Favorites`) resuelven su etiqueta desde **nuestros** string resources; las del addon usan el nombre que publicó el addon, que es dato, no copy nuestra.
 
-### T2 — Fuentes de EPG: del addon y del usuario
-- [ ] Derivar `epgUrl` del addon a partir de su URL de manifiesto (ver arriba) — **sin configuración**
-- [ ] Permitir URLs XMLTV propias del usuario (agregar / editar / activar / borrar)
-- [ ] Lista de respaldo con **cobertura hispana**: `epgshare01.online` expone `AR1`, `CL1`, `CO1`, `MX1`,
-      `PE1`, `UY1`, `ES1`, `US1`, además de `BR1` y `PT1`
-- [ ] Divulgar en la UI que la guía viene de fuentes externas, y permitir desactivarlas todas
+### T2 — Fuentes de EPG: del addon y del usuario (núcleo ✅)
+
+**Núcleo cerrado** con **9 tests** (`EpgSource`, `EpgSourceDiscovery`). Falta cablear el DataStore de
+`disabledIds` y la UI de alta/edición de URLs — es T6.
+
+- [x] **Derivar `epgUrl` del addon sin configuración del usuario**
+- [x] Lista de respaldo con **cobertura hispana**
+- [x] `disabledIds` uniforme: se puede apagar cualquier fuente, incluidas todas (`RF-38`)
+- [ ] DataStore de fuentes deshabilitadas y URLs propias (va con T6)
+- [ ] Divulgación en la UI de que la guía viene de terceros (va con T6)
+
+> ### La derivación, y el error que casi cometo
+>
+> El addon publica su guía al lado del manifiesto y **declara la convención él mismo**:
+>
+> ```js
+> const base = manifestUrl(request, token).replace(/\/manifest\.json$/, '');
+> // -> `${base}/epg.xml`
+> ```
+>
+> Verifiqué contra `AddonRepositoryImpl.canonicalizeUrl` que **`Addon.baseUrl` ya viene sin
+> `/manifest.json`** y **conserva la query**. Entonces la guía está en `path + "/epg.xml" + query`.
+>
+> El error tentador es concatenar sobre la cadena cruda: con `https://host/token?x=1` eso da
+> `https://host/token?x=1/epg.xml`, **donde la query se come el path**. Hay un test para eso.
+>
+> El premio: un usuario que ya tiene el addon instalado obtiene guía **sin pegar ninguna URL**. Es la
+> diferencia entre una función y un ejercicio de configuración.
+
+### T4 — Repositorio de EPG con swap atómico (parcial)
+
+**Hecha la parte de emparejamiento**, con **10 tests** (`EpgChannelNames`, `EpgGuideIndex`). Falta el
+repositorio (descarga, caché en disco, single-flight y swap atómico).
+
+- [x] Emparejamiento **estricto** canal↔guía, en **tres niveles**
+- [x] Alias explícito del usuario, que gana sobre cualquier conjetura
+- [x] **Sin coincidencia por subcadena, nunca**
+- [ ] Descarga + caché en disco con TTL + single-flight
+- [ ] **Swap atómico**: descargar y parsear primero, y recién entonces reemplazar
+- [ ] Publicación por `StateFlow` inmutable
+
+> ### Tres niveles, y por qué el primero es el bueno
+>
+> 1. **Id exacto.** La guía del addon propio se genera a partir de los mismos canales que se listan, así
+>    que sus `<channel id>` coinciden con los nuestros. Cuando pega, el match es exacto y sin juicio.
+> 2. **Alias del usuario.** Mapeo explícito, gana siempre.
+> 3. **Nombre normalizado único.** Las guías de terceros traen ids ajenos (tipo gatotv), así que el
+>    único puente es el nombre.
+>
+> El fork de referencia caía a **coincidencia por subcadena en cualquier dirección** con "el primero
+> gana" sobre un mapa sin orden: `Globo` se ataba a `Globonews` o `Globoplay` y el usuario veía la
+> programación de **otro canal** sin ninguna señal de que algo estaba mal. Ese fallback no existe acá,
+> y hay un test que lo fija.
+>
+> **La ambigüedad se rechaza, no se resuelve.** Si dos canales distintos de la guía normalizan al mismo
+> nombre, ese nombre queda envenenado y nunca matchea. Elegir uno sería adivinar, y una guía equivocada
+> es peor que ninguna.
+>
+> La normalización es agresiva (mayúsculas, acentos, puntuación y marcadores de calidad) **para que la
+> comparación pueda ser exacta**. Ser permisivo ahí es lo que permite que el match sea estricto.
 
 ### T3 — Parser de XMLTV por streaming, con topes ✅
 
@@ -111,17 +169,6 @@ no necesita.
 > ### Dato del feed real que valida el diseño de emparejamiento
 >
 > El archivo `AR1` trae ids tipo gatotv (`Canal.13.de.Argentina.(El Trece).ar`), **no** los `cyx_…` del addon propio. Confirma que el emparejamiento canal↔EPG tiene que ser **por nombre normalizado**, no por id — y que el estricto de `RF-36` importa mucho.
-
-### T4 — Repositorio de EPG con swap atómico
-- [ ] Descargar y parsear **primero**, y recién entonces hacer el swap: el fork borraba las cachés *antes*
-      de descargar, así que si todas las fuentes fallaban **perdía la guía que ya funcionaba** y marcaba
-      la sincronización como exitosa
-- [ ] Estado publicable por `StateFlow` inmutable: el fork leía `HashMap` mutables **sin sincronizar**
-      desde otro hilo mientras se limpiaban
-- [ ] Caché en disco con TTL y single-flight
-- [ ] Emparejamiento **estricto** canal↔EPG por nombre normalizado, con alias de usuario: el fork hacía
-      coincidencia por subcadena en cualquier dirección y con "el primero gana", así que `Globo` podía
-      matchear `Globonews` y mostrar el programa de otro canal
 
 ### T5 — Estados y errores
 - [ ] Distinguir **vacío** de **falló** (RF-50): el fork tragaba todos los errores de red y mostraba
