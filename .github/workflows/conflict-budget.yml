@@ -1,0 +1,32 @@
+name: conflict-budget
+
+# Guardarraíl del PRD NuvioES sección 7.3: la diferencia contra el pin de upstream
+# sólo puede tocar 4 archivos de upstream y 40 líneas. Si esto falla, el fork se
+# está volviendo caro de rebasar y hay que parar.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Traer upstream y el pin
+        run: |
+          git remote add upstream https://github.com/NuvioMedia/NuvioTV.git || true
+          git fetch upstream --tags --prune
+          git fetch origin '+refs/tags/upstream-pin:refs/tags/upstream-pin' || true
+
+      - name: Verificar el presupuesto de conflicto
+        run: ./nuvioes/check-conflict-budget.sh
+
+      - name: Verificar que no haya secretos en el repositorio
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

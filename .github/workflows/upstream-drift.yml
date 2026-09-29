@@ -1,0 +1,111 @@
+name: upstream-drift
+
+# Detección temprana de deriva (PRD NuvioES sección 9.4).
+#
+# Upstream publica ~300 commits cada 10 días. Enterarse del conflicto el día que
+# aparece cuesta minutos; descubrirlo a los tres meses cuesta días. Este job intenta
+# el rebase contra el tag estable más nuevo y abre un issue si falla.
+#
+# También busca señales de que upstream esté implementando TV en vivo propia, porque
+# eso cambiaría la estrategia del fork (PRD sección 9.6).
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Traer upstream
+        run: |
+          git remote add upstream https://github.com/NuvioMedia/NuvioTV.git || true
+          git fetch upstream --tags --prune
+
+      - name: Elegir el tag estable más nuevo
+        id: target
+        run: |
+          TAG="$(git tag -l --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
+          if [ -z "$TAG" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Intentar el rebase sobre el tag nuevo
+        id: rebase
+        if: steps.target.outputs.found == 'true'
+        run: |
+          OLD="$(tr -d '[:space:]' < UPSTREAM_BASE)"
+          NEW="${{ steps.target.outputs.tag }}"
+          if [ "$OLD" = "$NEW" ]; then
+            echo "clean=uptodate" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.email "ci@nuvio-es.local"
+          git config user.name "nuvio-es-ci"
+          if git rebase --onto "$NEW" "$OLD" HEAD >/dev/null 2>&1; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            git rebase --abort >/dev/null 2>&1 || true
+            CONFLICTS="$(git diff --name-only "$OLD" "$NEW" -- ':!app/src/main/java/com/nuvio/tv/ext/livetv' | head -40 || true)"
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "conflicts<<EOF"
+              echo "$CONFLICTS"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Buscar señales de TV en vivo en upstream
+        id: signals
+        run: |
+          HITS="$(git ls-tree -r --name-only upstream/dev \
+            | grep -iE 'livetv|live_tv|iptv|xmltv|epg' || true)"
+          {
+            echo "hits<<EOF"
+            echo "$HITS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Abrir issue si hay conflicto o señales
+        if: steps.rebase.outputs.clean == 'false' || steps.signals.outputs.hits != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ steps.target.outputs.tag }}';
+            const clean = '${{ steps.rebase.outputs.clean }}';
+            const conflicts = `${{ steps.rebase.outputs.conflicts }}`;
+            const signals = `${{ steps.signals.outputs.hits }}`;
+            const title = clean === 'false'
+              ? `[sync] No se pudo rebasar sobre ${tag}`
+              : `[sync] Upstream publicó posibles señales de TV en vivo`;
+            const body = [
+              '## Resultado del chequeo diario',
+              '',
+              `Tag objetivo: \`${tag}\``,
+              `Rebase limpio: \`${clean}\``,
+              '',
+              conflicts ? `### Archivos con conflicto\n\`\`\`\n${conflicts}\n\`\`\`` : '',
+              signals ? `### Posibles señales de TV en vivo en upstream/dev\n\`\`\`\n${signals}\n\`\`\`` : '',
+              '',
+              'Procedimiento: `docs/04-runbook-sync-upstream.md`.',
+              'Si el rebase falla, correr `./nuvioes/sync-upstream.sh --tag-latest` localmente.',
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['sync-upstream'],
+            });
