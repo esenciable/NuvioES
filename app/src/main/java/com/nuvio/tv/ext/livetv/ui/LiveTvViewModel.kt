@@ -255,20 +255,28 @@ class LiveTvViewModel @Inject constructor(
     private suspend fun syncEpgSources() {
         if (installedAddons.isEmpty()) return
 
+        // Only the addons that publish a TV catalog. Deriving a guide URL from every installed addon
+        // was a bug the device already caught once -- a subtitles addon has no /epg.xml, so asking it
+        // returns a 404 that is reported as a failure and buries the answer for the addon that matters.
+        val tvAddons = catalogs.map { it.addonBaseUrl to it.addonName }.distinct()
+
+        // The list holds EVERY source, enabled or not. Filtering it here would remove the disabled
+        // ones from the settings screen and leave no way to turn them back on.
         epgSources = EpgSourceDiscovery.discover(
-            addons = installedAddons.map { it.baseUrl to it.displayName },
+            addons = tvAddons,
             userSources = emptyList(),
-            disabledIds = disabledEpgSourceIds
+            disabledIds = emptySet()
         )
         publishIfSettled()
 
-        val sourceIds = epgSources.map { it.id }
-        if (sourceIds == lastSyncedEpgSourceIds || epgSources.isEmpty()) return
+        val enabledSources = epgSources.filterNot { it.id in disabledEpgSourceIds }
+        val sourceIds = enabledSources.map { it.id }
+        if (sourceIds == lastSyncedEpgSourceIds || enabledSources.isEmpty()) return
         lastSyncedEpgSourceIds = sourceIds
 
         // The guide loads after the list is already on screen. A sync downloads tens of megabytes and
         // there is no reason to make the user wait for programming before seeing channels.
-        guide = runCatching { epgRepository.sync(epgSources) }
+        guide = runCatching { epgRepository.sync(enabledSources) }
             .getOrNull()
             ?.let { it as? EpgSyncResult.Success }
             ?.snapshot
