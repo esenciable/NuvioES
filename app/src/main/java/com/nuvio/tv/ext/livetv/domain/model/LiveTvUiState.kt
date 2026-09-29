@@ -34,7 +34,14 @@ data class LiveTvChannelRow(
     val channel: LiveTvChannel,
     val now: LiveTvProgramme?,
     val next: LiveTvProgramme?,
-    val isFavorite: Boolean
+    val isFavorite: Boolean,
+    /**
+     * Every programme the guide has for this channel inside the window, in order.
+     *
+     * The grid needs the whole list, not just what is on and what is next, and the row is where the
+     * guide resolution already happens.
+     */
+    val programmes: List<LiveTvProgramme> = emptyList()
 ) {
     val hasGuide: Boolean get() = now != null || next != null
 }

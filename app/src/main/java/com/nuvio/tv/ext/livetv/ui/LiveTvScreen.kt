@@ -75,9 +75,16 @@ fun LiveTvScreen(
     onSetEpgSourceEnabled: (String, Boolean) -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
+    var showGrid by remember { mutableStateOf(false) }
 
-    // Back closes the pane and stays on the screen, which is what a panel owes the user.
-    BackHandler { if (showSettings) showSettings = false else onBack() }
+    // Back closes whichever panel is open and stays on the screen; that is what a panel owes the user.
+    BackHandler {
+        when {
+            showGrid -> showGrid = false
+            showSettings -> showSettings = false
+            else -> onBack()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (showSettings) {
@@ -85,6 +92,12 @@ fun LiveTvScreen(
                 state = state,
                 onSetAdultFilter = onSetAdultFilter,
                 onSetEpgSourceEnabled = onSetEpgSourceEnabled
+            )
+        } else if (showGrid) {
+            LiveTvGrid(
+                rows = state.channels,
+                nowEpochMs = System.currentTimeMillis(),
+                onPlayChannel = onPlayChannel
             )
         } else {
             when (state.status) {
@@ -108,7 +121,8 @@ fun LiveTvScreen(
                 state = state,
                 onPlayChannel = onPlayChannel,
                 onChannelFocused = onChannelFocused,
-                onOpenSettings = { showSettings = true }
+                onOpenSettings = { showSettings = true },
+                onOpenGrid = { showGrid = true }
             )
         }
         }
@@ -120,7 +134,8 @@ private fun ChannelList(
     state: LiveTvUiState,
     onPlayChannel: (String) -> Unit,
     onChannelFocused: (String) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenGrid: () -> Unit
 ) {
     val listFocusRequester = remember { FocusRequester() }
     val firstKey = state.channels.firstOrNull()?.channel?.stableKey
@@ -152,6 +167,23 @@ private fun ChannelList(
                 color = NuvioTheme.colors.TextSecondary,
                 modifier = Modifier.weight(1f)
             )
+            Button(
+                onClick = onOpenGrid,
+                colors = ButtonDefaults.colors(
+                    containerColor = NuvioTheme.colors.Surface,
+                    focusedContainerColor = NuvioTheme.colors.SecondaryVariant,
+                    contentColor = NuvioTheme.colors.TextPrimary,
+                    focusedContentColor = NuvioTheme.colors.OnSecondaryVariant
+                ),
+                shape = ButtonDefaults.shape(RoundedCornerShape(50))
+            ) {
+                Text(
+                    text = stringResource(R.string.live_tv_view_grid),
+                    modifier = Modifier.padding(horizontal = NuvioTheme.spacing.md),
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(modifier = Modifier.width(NuvioTheme.spacing.sm))
             Button(
                 onClick = onOpenSettings,
                 colors = ButtonDefaults.colors(

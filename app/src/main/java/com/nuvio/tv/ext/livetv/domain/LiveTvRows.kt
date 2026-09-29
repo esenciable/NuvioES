@@ -34,7 +34,8 @@ object LiveTvRows {
             channel = channel,
             now = programmes.firstOrNull { it.isOnAirAt(nowEpochMs) }?.toProgramme(),
             next = programmes.firstOrNull { it.startEpochMs > nowEpochMs }?.toProgramme(),
-            isFavorite = channel.stableKey in favorites
+            isFavorite = channel.stableKey in favorites,
+            programmes = programmes.map { it.toProgramme() }
         )
     }
 
