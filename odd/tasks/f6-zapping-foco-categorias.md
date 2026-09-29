@@ -98,14 +98,14 @@ Nuestra versión: **en estado de error, dejar de consumir las direcciones** y pe
 reintentar. Y **un solo `ExoPlayer` reutilizado** entre canales, no uno nuevo por canal.
 
 ### Tareas
-- [ ] `LiveTvViewModel.nextChannel()` / `previousChannel()` sobre la lista filtrada, por `stableKey`, con wrap
-- [ ] Tests: wrap desde el último, canal actual ausente de la lista, lista vacía, y que respeta el filtro
-- [ ] Estado `isFullscreen` + superficie propia reutilizando `createPreviewPlayer`
-- [ ] **Un solo reproductor**: agregarle `NuvioExoPlayerPerformanceHelper.buildLoadControl(context)` y un
-      `BandwidthMeter`. **Quitar el traspaso a `Screen.Player`** para canales de TV
-- [ ] Verificar que **ya no existe** el camino que abría un canal sin consultar el filtro adulto
-- [ ] Manejo de teclas: ARRIBA/ABAJO zappean; **en error NO se consumen**
-- [ ] HUD mínimo: nombre del canal + programa al aire (y el hint de teclas, en palabras)
+- [x] `LiveTvViewModel.nextChannel()` / `previousChannel()` sobre la lista filtrada, por `stableKey`, con wrap (puro en `LiveTvZapping.kt`, commit `5e3a36c3d`)
+- [x] Tests: wrap desde el último, canal actual ausente de la lista, lista vacía, y que respeta el filtro (10 tests en `LiveTvZappingTest`; 127 en total, 0 fallos)
+- [x] Estado `isFullscreen` + superficie propia reutilizando `createPreviewPlayer` (`LiveTvFullscreenSurface.kt`)
+- [x] **Un solo reproductor**: agregarle `NuvioExoPlayerPerformanceHelper.buildLoadControl(context)` y un
+      `BandwidthMeter`. **Quitar el traspaso a `Screen.Player`** para canales de TV (commit `5e3a36c3d`)
+- [x] Verificar que **ya no existe** el camino que abría un canal sin consultar el filtro adulto (grep de `Screen.Player` en el paquete: solo el comentario de doc)
+- [x] Manejo de teclas: ARRIBA/ABAJO zappean; **en error NO se consumen** (foco va a Reintentar)
+- [x] HUD mínimo: nombre del canal + programa al aire (y el hint de teclas, en palabras)
 - [ ] Verificar en dispositivo: wrap, error con Reintentar pulsable, y que un solo player sobrevive
 
 ---
