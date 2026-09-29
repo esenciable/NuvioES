@@ -1,0 +1,83 @@
+diff --git a/app/src/main/java/com/nuvio/tv/ext/livetv/ui/LiveTvScreen.kt b/app/src/main/java/com/nuvio/tv/ext/livetv/ui/LiveTvScreen.kt
+index a3817d58c..a08ba9daa 100644
+--- a/app/src/main/java/com/nuvio/tv/ext/livetv/ui/LiveTvScreen.kt
++++ b/app/src/main/java/com/nuvio/tv/ext/livetv/ui/LiveTvScreen.kt
+@@ -19,12 +19,15 @@ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.layout.width
+ import androidx.compose.foundation.lazy.LazyColumn
+ import androidx.compose.foundation.lazy.items
++import androidx.compose.foundation.lazy.rememberLazyListState
+ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateMapOf
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
++import androidx.compose.runtime.saveable.rememberSaveable
+ import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+@@ -137,20 +140,29 @@ private fun ChannelList(
+     onOpenSettings: () -> Unit,
+     onOpenGrid: () -> Unit
+ ) {
+-    val listFocusRequester = remember { FocusRequester() }
++    val listState = rememberLazyListState()
++    val requesters = remember { mutableStateMapOf<String, FocusRequester>() }
+     val firstKey = state.channels.firstOrNull()?.channel?.stableKey
+     var focusedKey by remember { mutableStateOf<String?>(null) }
++    // Survives the list being disposed and recomposed -- which is what happens when the user goes to
++    // the player and comes back, and is the whole reason the focus used to reset to channel 1.
++    var rememberKey by rememberSaveable { mutableStateOf<String?>(null) }
+ 
+-    // Focus lands on the first row when the screen is composed -- ONCE.
++    // Focus goes back to WHERE THE USER WAS, not to the top.
+     //
+-    // This used to be keyed on the first row's identity, which meant that any change to the list that
+-    // put a different channel first also called requestFocus() on it, moving the user's focus with no
+-    // input from the user. That is the mechanism behind the unexplained jump from row 1 to row 8 seen on
+-    // the device, and keying on Unit removes it: entering the screen (and re-entering it after a
+-    // refresh, since the list unmounts while loading) is the only thing that asks for focus.
++    // Two details make this work, and both are the difference between "looks right" and "is right":
++    //   1. Requesters are keyed by stableKey, never by list position. The reference fork keyed them by
++    //      index while items were keyed by channel, so after any filter a surviving row reused the
++    //      requester of a channel that had already been disposed.
++    //   2. The list scrolls to the remembered row BEFORE asking for focus, because a row that is not
++    //      composed has no focus node to receive it.
+     LaunchedEffect(Unit) {
+-        focusedKey = firstKey
+-        runCatching { listFocusRequester.requestFocus() }
++        val target = rememberKey?.takeIf { key -> state.channels.any { it.channel.stableKey == key } }
++            ?: firstKey
++        focusedKey = target
++        val index = state.channels.indexOfFirst { it.channel.stableKey == target }
++        if (index > 0) runCatching { listState.scrollToItem(index) }
++        runCatching { requesters[target]?.requestFocus() }
+     }
+ 
+     Column(modifier = Modifier.fillMaxSize().padding(NuvioTheme.spacing.xl)) {
+@@ -247,19 +259,21 @@ private fun ChannelList(
+         Row(modifier = Modifier.fillMaxSize()) {
+             LazyColumn(
+                 modifier = Modifier.weight(1f),
++                state = listState,
+                 verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs)
+             ) {
+                 items(items = state.channels, key = { it.channel.stableKey }) { row ->
+-                    val isFirst = row.channel.stableKey == firstKey
++                    val requester = requesters.getOrPut(row.channel.stableKey) { FocusRequester() }
+                     ChannelRow(
+                         row = row,
+                         resolving = state.resolvingChannelKey == row.channel.stableKey,
+                         onClick = { onPlayChannel(row.channel.stableKey) },
+                         onFocused = {
+                             focusedKey = row.channel.stableKey
++                            rememberKey = row.channel.stableKey
+                             onChannelFocused(row.channel.stableKey)
+                         },
+-                        modifier = if (isFirst) Modifier.focusRequester(listFocusRequester) else Modifier
++                        modifier = Modifier.focusRequester(requester)
+                     )
+                 }
+             }
