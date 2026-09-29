@@ -111,9 +111,14 @@ private fun ChannelList(
     val firstKey = state.channels.firstOrNull()?.channel?.stableKey
     var focusedKey by remember { mutableStateOf<String?>(null) }
 
-    // Focus follows the list: entering the screen, and after a filter change leaves the selection
-    // pointing at nothing, focus has to land somewhere declared rather than nowhere.
-    LaunchedEffect(firstKey) {
+    // Focus lands on the first row when the screen is composed -- ONCE.
+    //
+    // This used to be keyed on the first row's identity, which meant that any change to the list that
+    // put a different channel first also called requestFocus() on it, moving the user's focus with no
+    // input from the user. That is the mechanism behind the unexplained jump from row 1 to row 8 seen on
+    // the device, and keying on Unit removes it: entering the screen (and re-entering it after a
+    // refresh, since the list unmounts while loading) is the only thing that asks for focus.
+    LaunchedEffect(Unit) {
         focusedKey = firstKey
         runCatching { listFocusRequester.requestFocus() }
     }

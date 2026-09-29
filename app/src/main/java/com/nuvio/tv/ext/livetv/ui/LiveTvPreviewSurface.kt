@@ -3,11 +3,13 @@
 package com.nuvio.tv.ext.livetv.ui
 
 import android.content.Context
+import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -48,6 +50,7 @@ internal fun LiveTvPreviewSurface(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val focusHost = Modifier.focusProperties { canFocus = false }
 
     // Rebuilt when the headers change, because they are baked into the data source factory.
     val player = remember(headers) { createPreviewPlayer(context, headers.orEmpty()) }
@@ -64,10 +67,16 @@ internal fun LiveTvPreviewSurface(
     }
 
     AndroidView(
-        modifier = modifier,
+        // Belt and braces with the View flags below: a preview must never take focus, because the remote
+        // is driving the list and a panel that steals it strands the user.
+        modifier = modifier.then(focusHost),
         factory = { viewContext ->
             PlayerView(viewContext).apply {
                 useController = false
+                isFocusable = false
+                isFocusableInTouchMode = false
+                // The SurfaceView inside would otherwise be able to take focus on its own.
+                descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 this.player = player
             }
         }
