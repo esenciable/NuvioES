@@ -57,9 +57,13 @@ data class LiveTvUiState(
     val channels: List<LiveTvChannelRow> = emptyList(),
     val categories: List<LiveTvCategory> = emptyList(),
     val selectedCategory: LiveTvCategoryId = LiveTvCategoryId.All,
+    /** What the details side shows. Null until the user picks a channel. */
+    val selectedChannelKey: String? = null,
     val totalChannelCount: Int = 0,
     val guideProgrammeCount: Int = 0,
     /** How many EPG sources failed on the last sync. Zero is the good case. */
     val failedEpgSources: Int = 0,
+    /** Catalogs that could not be read. Surfaced instead of swallowed. */
+    val failedCatalogs: Int = 0,
     val errorMessage: String? = null
 )

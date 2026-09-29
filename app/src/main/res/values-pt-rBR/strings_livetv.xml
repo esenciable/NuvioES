@@ -4,4 +4,10 @@
     <string name="live_tv_empty_title">Ainda não há canais</string>
     <string name="live_tv_empty_desc">Os canais vêm dos addons que você já tem instalados.</string>
     <string name="live_tv_empty_action">Gerenciar addons</string>
+    <string name="live_tv_loading">Procurando canais…</string>
+    <string name="live_tv_error_title">Não foi possível ler seus canais</string>
+    <string name="live_tv_retry">Tentar novamente</string>
+    <string name="live_tv_channels_count">%1$d canais</string>
+    <string name="live_tv_no_guide">Sem dados de guia</string>
+    <string name="live_tv_select_channel">Escolha um canal para ver os detalhes</string>
 </resources>
