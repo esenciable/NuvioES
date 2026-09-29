@@ -106,7 +106,7 @@ reintentar. Y **un solo `ExoPlayer` reutilizado** entre canales, no uno nuevo po
 - [x] Verificar que **ya no existe** el camino que abría un canal sin consultar el filtro adulto (grep de `Screen.Player` en el paquete: solo el comentario de doc)
 - [x] Manejo de teclas: ARRIBA/ABAJO zappean; **en error NO se consumen** (foco va a Reintentar)
 - [x] HUD mínimo: nombre del canal + programa al aire (y el hint de teclas, en palabras)
-- [ ] Verificar en dispositivo: wrap, error con Reintentar pulsable, y que un solo player sobrevive
+- [x] Verificar en dispositivo: wrap, error con Reintentar pulsable, y que un solo player sobrevive (commit `5e3a36c3d`: DOWN zappeó al canal 2 con HUD nuevo; UP desde el primero wrappeó al último de 1172 — sin streams, el addon devuelve 0 — y el overlay "Try again" quedó enfocado y pulsable; BACK volvió a la lista con foco en el canal zappeado; 0 crashes en todo el recorrido)
 
 ---
 
