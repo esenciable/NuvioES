@@ -1,6 +1,5 @@
 package com.nuvio.tv.ext.livetv.domain
 
-import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.ContentType
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.domain.model.PosterShape
@@ -108,18 +107,11 @@ class LiveTvChannelTest {
         genres = emptyList()
     )
 
-    private fun MetaPreview.toChannel() = toLiveTvChannel(addon = addon(), catalogId = CATALOG, catalogName = "Vivo")
-
-    private fun addon() = Addon(
-        id = "addon",
-        name = "Addon",
-        version = "1.0.0",
-        description = null,
-        logo = null,
-        baseUrl = ADDON,
-        catalogs = emptyList(),
-        types = listOf(ContentType.TV),
-        resources = emptyList()
+    private fun MetaPreview.toChannel() = toLiveTvChannel(
+        addonBaseUrl = ADDON,
+        addonName = "Addon",
+        catalogId = CATALOG,
+        catalogName = "Vivo"
     )
 
     private fun channel(

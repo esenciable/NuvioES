@@ -16,7 +16,12 @@ data class LiveTvCatalog(
     val addonId: String,
     val catalogId: String,
     val catalogName: String,
-    val apiType: String
+    val apiType: String,
+    /**
+     * Whether the addon advertises `skip`. Paging a catalog that does not support it would fetch the
+     * first page over and over under the guise of pagination.
+     */
+    val supportsSkip: Boolean = false
 ) {
     val categoryId: LiveTvCategoryId get() = LiveTvCategoryId.Addon(addonBaseUrl, catalogId)
 
@@ -57,7 +62,8 @@ object TvCatalogSelector {
                         addonId = addon.id,
                         catalogId = catalog.id,
                         catalogName = catalog.name,
-                        apiType = catalog.apiType
+                        apiType = catalog.apiType,
+                        supportsSkip = catalog.extraSupported.any { it.equals("skip", ignoreCase = true) }
                     )
                 }
         }

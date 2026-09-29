@@ -1,6 +1,5 @@
 package com.nuvio.tv.ext.livetv.domain.model
 
-import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.MetaPreview
 
 /**
@@ -31,17 +30,22 @@ fun liveTvChannelKey(addonBaseUrl: String, channelId: String): String = "$addonB
 /**
  * Maps an addon catalog item to a channel.
  *
- * A channel's visual identity is its logo; `poster` is the fallback because some addons only fill
- * that one in.
+ * Takes the addon's identity as plain fields rather than an [com.nuvio.tv.domain.model.Addon], because
+ * the catalog repository hands back a `CatalogRow` carrying exactly these values -- going through the
+ * full addon record would mean looking it up again for no reason.
+ *
+ * A channel's visual identity is its logo; `poster` is the fallback because some addons only fill that
+ * one in.
  */
 fun MetaPreview.toLiveTvChannel(
-    addon: Addon,
+    addonBaseUrl: String,
+    addonName: String,
     catalogId: String,
     catalogName: String
 ): LiveTvChannel = LiveTvChannel(
     id = id,
-    addonBaseUrl = addon.baseUrl,
-    addonName = addon.displayName,
+    addonBaseUrl = addonBaseUrl,
+    addonName = addonName,
     catalogId = catalogId,
     catalogName = catalogName,
     name = name,

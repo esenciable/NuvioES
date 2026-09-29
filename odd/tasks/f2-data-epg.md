@@ -209,10 +209,34 @@ no necesita.
       *"no hay canales"* — el usuario no podía distinguir falta de internet de catálogo vacío
 - [ ] Estado accionable cuando no hay addons seleccionados (RF-51), con `FocusRequester` explícito
 
-### T6 — Cableado en la pantalla
-- [ ] `LiveTvViewModel` como única fuente de verdad
-- [ ] La pantalla reemplaza el estado vacío por la lista
-- [ ] **Sin literales visibles al usuario en Kotlin** (RF-53): el fork tenía una docena en portugués
+### T6 — Cableado en la pantalla (parcial)
+
+**Hecho**: la resolución de la línea de tiempo y el cargador de canales, con **16 tests**. **Falta**: el
+repositorio/ViewModel, la lista en la pantalla y el módulo de Hilt — o sea, lo que lo hace **visible**.
+
+- [x] Resolución de **ahora/siguiente** desde la guía — **puro**, testeable sin dispositivo, red ni reloj
+- [x] `LiveTvRows.categoriesFor` — las dos categorías propias primero, después los catálogos en orden
+- [x] `CatalogChannelLoader` sobre el `CatalogRepository` de **upstream** (no reimplementa descarga)
+- [x] Dedupe por **clave estable**: el addon publica varios catálogos de TV que se solapan
+- [x] Respeta `supportsSkip` del catálogo: **no pagina uno que no anuncia `skip`**
+- [ ] `LiveTvRepository` + `LiveTvViewModel` como única fuente de verdad
+- [ ] La lista en la pantalla, reemplazando el estado vacío
+- [ ] Módulo de Hilt: `EpgDocumentFetcher` con OkHttp, caché en disco y scope
+
+> ### `supportsSkip` no es un detalle
+>
+> Se lee del `extraSupported` del catálogo. Paginar un catálogo que no anuncia `skip` significa pedir la
+> primera página una y otra vez **bajo la apariencia de paginación**. Y combinado con la regla de "página
+> sin ítems nuevos" de `LiveTvPaging`, un addon que ignora `skip` se corta en **dos** llamadas en vez de
+> agotar el tope de quince. Hay un test para cada caso.
+
+> ### Por qué la resolución de la línea de tiempo es una función pura
+>
+> El fork la resolvía **dentro de un componente de UI** y memoizaba el resultado en un mapa mutable
+> protegido solo en las escrituras. Acá es `LiveTvRows.build(channels, guide, aliases, favourites, now)`:
+> entra todo, sale la lista de filas, y no hay estado escondido. Eso permite probar los bordes que
+> importan —el instante de fin **exclusivo**, el progreso acotado a 0..1, un canal que la guía no cubre—
+> sin dispositivo, sin red y sin reloj.
 
 ---
 
