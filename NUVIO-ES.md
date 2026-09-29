@@ -1,8 +1,15 @@
 # NuvioES — fork de [NuvioTV](https://github.com/NuvioMedia/NuvioTV) con TV en vivo
 
-> **Estado: F0 (harness) — todavía no hay feature.** Este repositorio es la base sobre la que se
-> construye la feature de TV en vivo y guía de programación, con una restricción de diseño no negociable:
-> **tiene que seguir siendo barato recibir las mejoras de upstream.**
+> **Estado: F0 (harness) cerrado y publicado — todavía no hay feature.** Este repositorio es la base
+> sobre la que se construye la feature de TV en vivo y guía de programación, con una restricción de
+> diseño no negociable: **tiene que seguir siendo barato recibir las mejoras de upstream.**
+
+| | |
+| --- | --- |
+| Repositorio | [`esenciable/NuvioES`](https://github.com/esenciable/NuvioES) — fork real de `NuvioMedia/NuvioTV` |
+| Rama de integración | **`nuvioes`** (es la rama por defecto del repositorio) |
+| Pin de upstream | `1.1.0-beta.2` (`d8c50017`), en el archivo `UPSTREAM_BASE` y en el tag `upstream-pin` |
+| Remotos | `origin` = este fork · `upstream` = `NuvioMedia/NuvioTV` |
 
 El análisis, la auditoría del fork de referencia y el PRD completo viven en el repositorio hermano
 (`../nuvio/docs/`). Los documentos clave:
@@ -65,6 +72,13 @@ UPSTREAM_BASE                                  ← el tag de upstream sobre el q
 ---
 
 ## Modelo de ramas
+
+> **¿Por qué la rama de integración se llama `nuvioes` y no `main`?** Porque **upstream tiene su propia
+> rama `main`**. Reusar ese nombre crea dos peligros concretos: el botón *"Sync fork"* de GitHub ofrecería
+> **descartar nuestros commits**, y un push nuestro sería **rechazado por non-fast-forward** (el fork ya
+> tiene el `main` de upstream, que es otra línea). Un nombre que upstream no tiene elimina los dos de raíz.
+> Además, la rama por defecto del repositorio está fijada a `nuvioes`, así que un job programado nunca
+> hace checkout de `dev` por accidente.
 
 ```text
 upstream/dev              ──●──●──●──●──●──●──●     avanza solo

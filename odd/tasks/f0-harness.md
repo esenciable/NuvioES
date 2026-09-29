@@ -22,7 +22,7 @@ el presupuesto de 4 archivos y 40 líneas esté probado como sostenible, no ante
 - [x] Congelar el pin en `1.1.0-beta.2` (tag `d8c50017`); no hay `1.1.0` estable todavía
 - [x] Crear `nuvioes` desde el tag y el tag `upstream-pin`
 - [x] Escribir `UPSTREAM_BASE`
-- [x] Identidad de commits como `lordmacu` (local al repo), sin pie de IA
+- [x] Identidad de commits como `rstoute` (local al repo), sin pie de IA
 
 **Evidencia:** `UPSTREAM_BASE` = `1.1.0-beta.2`; `upstream-pin` = `d8c50017`.
 
@@ -137,12 +137,25 @@ los tres bugs habrían llegado a F1 con el harness aparentando estar completo.**
 | 2026-09-28 | Arranque. Pin, identidad, `UPSTREAM_BASE`, tag `upstream-pin`. Escritos los 3 scripts, los 2 workflows y `NUVIO-ES.md`. |
 | 2026-09-28 | Verificado el guardarraíl en sus dos direcciones (falla con violación, cuenta el enganche permitido). Detectada y esquivada la trampa del `.gitignore` de upstream: el tooling se movió de `scripts/` a `nuvioes/`. |
 | 2026-09-28 | **Ensayado el rebase real** contra `upstream/dev`: 85 commits de avance, rebase limpio. El ensayo destapó 3 bugs que no se veían leyendo el código (ruta stale, no-op silencioso, base de comparación equivocada). Gradle verificado: `BUILD SUCCESSFUL`. **F0 cerrado.** |
+| 2026-09-29 | Publicado: fork `esenciable/NuvioES`. Rama de integración renombrada a `nuvioes` para no colisionar con el `main` de upstream. Autoría reescrita a `rstoute`. Documentos convertidos de voseo a tuteo. Job de deriva anclado a `ref: nuvioes`. |
 
 ---
 
-## Pendiente de decisión del dueño
+## Decisiones del dueño (resueltas)
 
-- **P1** — nombre y organización del fork real en GitHub. La cuenta activa del token es `esenciable`
-  (3 repos), pero la identidad de commits acordada es `lordmacu` (239 repos). Hay que decidir bajo qué
-  cuenta se publica, porque el token activo no puede crear repos en `lordmacu`.
-- Crear el fork y pushear es una acción de publicación: **espera OK explícito**.
+- ~~**P1** — bajo qué cuenta publicar.~~ **Resuelto:** [`esenciable/NuvioES`](https://github.com/esenciable/NuvioES),
+  fork real de `NuvioMedia/NuvioTV`, público.
+- **Identidad de commits:** `rstoute <249775880+rstoute@users.noreply.github.com>`.
+  Los commits originales se reescribieron con `git filter-branch` (nada estaba publicado, así que fue gratis).
+- **Rama de integración:** **`nuvioes`**, no `main`. Upstream tiene su propio `main`, así que reusar ese
+  nombre hacía que el botón *"Sync fork"* ofreciera **descartar nuestros commits** y que un push nuestro
+  fuera **rechazado por non-fast-forward**. Además es la rama por defecto del repositorio, así que un job
+  programado nunca hace checkout de `dev` por accidente.
+- ~~**Merge de `feat/f0-harness`**~~ **Hecho**, fast-forward.
+- ~~**Publicar**~~ **Hecho**: rama `nuvioes` + tag `upstream-pin` pusheados; `origin` y `upstream` configurados.
+
+## Pendiente antes de F1
+
+- **Ensayar el job `upstream-drift` una vez** con `workflow_dispatch`, para confirmar que GitHub Actions
+  corre en este fork (los workflows programados de un fork recién creado a veces necesitan habilitación).
+- Nada más: **F0 está cerrado y publicado.**
