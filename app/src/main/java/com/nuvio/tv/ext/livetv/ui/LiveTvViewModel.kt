@@ -31,7 +31,9 @@ import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayableStream
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
+import com.nuvio.tv.ext.livetv.domain.model.canBeHidden
 import com.nuvio.tv.ext.livetv.domain.model.inCategory
+import com.nuvio.tv.ext.livetv.domain.model.preferenceKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
@@ -105,6 +107,8 @@ class LiveTvViewModel @Inject constructor(
     /** Favourites arrive with the settings screen; empty means "none marked", not "unknown". */
     private var favorites: Set<String> = emptySet()
     private var selectedCategory: LiveTvCategoryId = LiveTvCategoryId.All
+    /** The slider categories the user hid, by preference key. Empty means all visible. */
+    private var hiddenCategoryIds: Set<String> = emptySet()
 
     init {
         refresh()
@@ -132,6 +136,20 @@ class LiveTvViewModel @Inject constructor(
                 syncEpgSources()
             }
         }
+        viewModelScope.launch {
+            liveTvStore.hiddenCategoryIds.collect { hidden ->
+                if (hidden == hiddenCategoryIds) return@collect
+                hiddenCategoryIds = hidden
+                // Hiding the category that is currently selected would leave the slider with no active
+                // chip over a list that is still filtered. Fall back to All so the visible state and the
+                // filtered list never disagree.
+                if (selectedCategory.canBeHidden && selectedCategory.preferenceKey in hidden) {
+                    selectCategory(LiveTvCategoryId.All)
+                } else {
+                    publishIfSettled()
+                }
+            }
+        }
     }
 
     fun setAdultFilter(hide: Boolean) {
@@ -140,6 +158,17 @@ class LiveTvViewModel @Inject constructor(
 
     fun setEpgSourceEnabled(sourceId: String, enabled: Boolean) {
         viewModelScope.launch { liveTvStore.setEpgSourceEnabled(sourceId, enabled) }
+    }
+
+    /**
+     * Shows or hides one category in the slider.
+     *
+     * `All` and `Favorites` cannot be hidden, so asking to hide them is a no-op here as well as in the
+     * pure filter -- one invariant, enforced at both ends.
+     */
+    fun setCategoryVisible(categoryId: LiveTvCategoryId, visible: Boolean) {
+        if (!categoryId.canBeHidden) return
+        viewModelScope.launch { liveTvStore.setCategoryVisible(categoryId.preferenceKey, visible) }
     }
 
     /**
@@ -353,6 +382,27 @@ class LiveTvViewModel @Inject constructor(
     fun selectCategory(categoryId: LiveTvCategoryId) {
         selectedCategory = categoryId
         publish(status = _state.value.status, message = _state.value.errorMessage)
+        clearPreviewIfChannelLeftCategory()
+    }
+
+    /**
+     * The preview only makes sense for a channel the list can still show.
+     *
+     * When the category filter drops the channel the preview is on, keeping it would leave the panel
+     * playing something that is no longer reachable from the list -- exactly the state the reference
+     * fork left behind. Clearing the focused key as well restarts the debounced feed, so focusing that
+     * channel again (or any other) resolves a fresh preview instead of waiting on a value the feed has
+     * already seen.
+     */
+    private fun clearPreviewIfChannelLeftCategory() {
+        val visibleKeys = _state.value.channels.mapTo(mutableSetOf()) { it.channel.stableKey }
+        val focusedKey = _focusedChannel.value
+        val previewKey = _state.value.preview?.channelKey
+        val focusedLeft = focusedKey != null && focusedKey !in visibleKeys
+        val previewLeft = previewKey != null && previewKey !in visibleKeys
+        if (!focusedLeft && !previewLeft) return
+        if (focusedLeft) _focusedChannel.value = null
+        _state.update { it.copy(preview = null, previewFailure = null) }
     }
 
     /**
@@ -417,6 +467,7 @@ class LiveTvViewModel @Inject constructor(
                 channels = rows,
                 categories = categories,
                 selectedCategory = selectedCategory,
+                hiddenCategoryIds = hiddenCategoryIds,
                 totalChannelCount = channels.size,
                 guideProgrammeCount = guide.guide.totalProgramsParsed,
                 guideLoaded = !guide.isEmpty,

@@ -43,6 +43,36 @@ data class LiveTvCategory(
     }
 }
 
+/**
+ * The stable key a category is stored under in the per-profile preferences.
+ *
+ * Built from the typed identity, never from display text: translating the chip label must not change
+ * what is selected or hidden. The reference fork stored the literal `"Favoritos"` and compared it in
+ * three places, so translating the label silently broke favourites.
+ *
+ * `All` and `Favorites` use fixed sentinels; an addon category reuses the channel key convention
+ * (`addonBaseUrl|catalogId`), so the two can never collide with a real addon base URL.
+ */
+val LiveTvCategoryId.preferenceKey: String
+    get() = when (this) {
+        LiveTvCategoryId.All -> CATEGORY_KEY_ALL
+        LiveTvCategoryId.Favorites -> CATEGORY_KEY_FAVORITES
+        is LiveTvCategoryId.Addon -> "addon:$addonBaseUrl|$catalogId"
+    }
+
+/**
+ * Whether the user may remove this category from the slider.
+ *
+ * `All` and `Favorites` cannot be hidden: without `All` the list has no default state, and
+ * `Favorites` is a function of our own store rather than a category an addon published. Attempting to
+ * hide either is a no-op by construction.
+ */
+val LiveTvCategoryId.canBeHidden: Boolean
+    get() = this !is LiveTvCategoryId.All && this !is LiveTvCategoryId.Favorites
+
+private const val CATEGORY_KEY_ALL = "all"
+private const val CATEGORY_KEY_FAVORITES = "favorites"
+
 fun List<LiveTvChannel>.inCategory(
     category: LiveTvCategory,
     isFavorite: (LiveTvChannel) -> Boolean

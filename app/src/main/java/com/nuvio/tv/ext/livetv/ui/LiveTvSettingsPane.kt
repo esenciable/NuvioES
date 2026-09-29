@@ -19,7 +19,11 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import com.nuvio.tv.R
 import com.nuvio.tv.ext.livetv.domain.model.EpgSource
 import com.nuvio.tv.ext.livetv.domain.model.EpgSourceOrigin
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategory
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategoryId
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
+import com.nuvio.tv.ext.livetv.domain.model.canBeHidden
+import com.nuvio.tv.ext.livetv.domain.model.preferenceKey
 import com.nuvio.tv.ui.screens.settings.SettingsDetailHeader
 import com.nuvio.tv.ui.screens.settings.SettingsGroupCard
 import com.nuvio.tv.ui.screens.settings.SettingsToggleRow
@@ -40,7 +44,8 @@ import com.nuvio.tv.ui.theme.NuvioTheme
 internal fun LiveTvSettingsPane(
     state: LiveTvUiState,
     onSetAdultFilter: (Boolean) -> Unit,
-    onSetEpgSourceEnabled: (String, Boolean) -> Unit
+    onSetEpgSourceEnabled: (String, Boolean) -> Unit,
+    onSetCategoryVisible: (LiveTvCategoryId, Boolean) -> Unit
 ) {
     val listState = rememberLazyListState()
     val firstToggle = remember { FocusRequester() }
@@ -80,6 +85,28 @@ internal fun LiveTvSettingsPane(
             }
         }
 
+        item(key = "categories-header") {
+            SettingsGroupCard(
+                title = stringResource(R.string.live_tv_settings_categories),
+                subtitle = stringResource(R.string.live_tv_settings_categories_sub)
+            ) {}
+        }
+
+        // Every category the user is allowed to hide. All and Favorites are absent by construction:
+        // without All the list has no default state, and Favorites is our own store, not a catalog.
+        items(
+            items = state.categories.filter { it.id.canBeHidden },
+            key = { "category-${it.id.preferenceKey}" }
+        ) { category ->
+            val visible = category.id.preferenceKey !in state.hiddenCategoryIds
+            SettingsToggleRow(
+                title = category.settingsLabel(),
+                subtitle = null,
+                checked = visible,
+                onToggle = { onSetCategoryVisible(category.id, !visible) }
+            )
+        }
+
         item(key = "sources-header") {
             SettingsGroupCard(
                 title = stringResource(R.string.live_tv_settings_sources),
@@ -106,3 +133,7 @@ private fun sourceOriginLabel(source: EpgSource): String = when (source.origin) 
     EpgSourceOrigin.BuiltIn -> stringResource(R.string.live_tv_settings_source_third_party)
     EpgSourceOrigin.User -> stringResource(R.string.live_tv_settings_source_user)
 }
+
+/** A hideable category is always an addon catalog, so the addon's own name is the label. */
+private fun LiveTvCategory.settingsLabel(): String =
+    addonCatalogName ?: (id as? LiveTvCategoryId.Addon)?.catalogId.orEmpty()

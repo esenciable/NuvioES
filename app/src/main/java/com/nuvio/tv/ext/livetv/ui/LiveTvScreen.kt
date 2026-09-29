@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
@@ -49,11 +50,14 @@ import com.nuvio.tv.R
 import com.nuvio.tv.ext.livetv.data.epg.EpgFailure
 import com.nuvio.tv.ext.livetv.data.epg.EpgFailureReason
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
+import com.nuvio.tv.ext.livetv.domain.LiveTvRows
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategoryId
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannelRow
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPlayRequest
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPreview
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
+import com.nuvio.tv.ext.livetv.domain.model.preferenceKey
 import com.nuvio.tv.ui.theme.NuvioTheme
 
 /**
@@ -78,6 +82,8 @@ fun LiveTvScreen(
     onChannelFocused: (String) -> Unit,
     onSetAdultFilter: (Boolean) -> Unit,
     onSetEpgSourceEnabled: (String, Boolean) -> Unit,
+    onSetCategoryVisible: (LiveTvCategoryId, Boolean) -> Unit,
+    onSelectCategory: (LiveTvCategoryId) -> Unit,
     onNextChannel: () -> Unit,
     onPreviousChannel: () -> Unit,
     onExitFullscreen: () -> Unit
@@ -127,7 +133,8 @@ fun LiveTvScreen(
             LiveTvSettingsPane(
                 state = state,
                 onSetAdultFilter = onSetAdultFilter,
-                onSetEpgSourceEnabled = onSetEpgSourceEnabled
+                onSetEpgSourceEnabled = onSetEpgSourceEnabled,
+                onSetCategoryVisible = onSetCategoryVisible
             )
         } else if (showGrid) {
             LiveTvGrid(
@@ -160,6 +167,7 @@ fun LiveTvScreen(
                 onRememberKey = { rememberedKey = it },
                 onPlayChannel = onPlayChannel,
                 onChannelFocused = onChannelFocused,
+                onSelectCategory = onSelectCategory,
                 onOpenSettings = { showSettings = true },
                 onOpenGrid = { showGrid = true }
             )
@@ -176,11 +184,18 @@ private fun ChannelList(
     onRememberKey: (String) -> Unit,
     onPlayChannel: (String) -> Unit,
     onChannelFocused: (String) -> Unit,
+    onSelectCategory: (LiveTvCategoryId) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenGrid: () -> Unit
 ) {
     val listState = rememberLazyListState()
     val requesters = remember { mutableStateMapOf<String, FocusRequester>() }
+    // The chip requesters are keyed by category key, like the row requesters are keyed by stableKey:
+    // position would attach the active chip's requester to a different category after a settings change.
+    val categoryRequesters = remember { mutableStateMapOf<String, FocusRequester>() }
+    val activeCategoryRequester = categoryRequesters.getOrPut(state.selectedCategory.preferenceKey) {
+        FocusRequester()
+    }
     val firstKey = state.channels.firstOrNull()?.channel?.stableKey
     var focusedKey by remember { mutableStateOf<String?>(null) }
 
@@ -210,7 +225,7 @@ private fun ChannelList(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.live_tv_channels_count, state.totalChannelCount),
+                text = stringResource(R.string.live_tv_channels_count, state.channels.size),
                 style = MaterialTheme.typography.titleMedium,
                 color = NuvioTheme.colors.TextSecondary,
                 modifier = Modifier.weight(1f)
@@ -292,7 +307,20 @@ private fun ChannelList(
 
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
 
-        Row(modifier = Modifier.fillMaxSize()) {
+        // The category slider sits directly above the list, so UP from the first channel row reaches it
+        // and DOWN from a chip goes back into the list. It is never given entry focus: the list keeps
+        // that, because watching a channel is what the user came for.
+        LiveTvCategorySlider(
+            categories = LiveTvRows.visibleCategoriesFor(state.categories, state.hiddenCategoryIds),
+            selectedCategory = state.selectedCategory,
+            onSelectCategory = onSelectCategory,
+            activeRequester = activeCategoryRequester,
+            requesters = categoryRequesters
+        )
+
+        Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
+
+        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 state = listState,
@@ -309,7 +337,13 @@ private fun ChannelList(
                             onRememberKey(row.channel.stableKey)
                             onChannelFocused(row.channel.stableKey)
                         },
-                        modifier = Modifier.focusRequester(requester)
+                        // UP from the first row goes to the chip that is actually selected, not to
+                        // whichever chip happens to sit above the list's left edge.
+                        modifier = Modifier
+                            .focusRequester(requester)
+                            .focusProperties {
+                                if (row.channel.stableKey == firstKey) up = activeCategoryRequester
+                            }
                     )
                 }
             }

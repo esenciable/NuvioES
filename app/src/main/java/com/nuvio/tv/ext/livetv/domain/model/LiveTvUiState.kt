@@ -69,6 +69,13 @@ data class LiveTvUiState(
     val channels: List<LiveTvChannelRow> = emptyList(),
     val categories: List<LiveTvCategory> = emptyList(),
     val selectedCategory: LiveTvCategoryId = LiveTvCategoryId.All,
+    /**
+     * The slider categories the user removed, by preference key.
+     *
+     * Carried in state because the slider filters [categories] with it; the settings pane keeps
+     * showing **every** category so a hidden one can be turned back on.
+     */
+    val hiddenCategoryIds: Set<String> = emptySet(),
     val totalChannelCount: Int = 0,
     val guideProgrammeCount: Int = 0,
     /** Whether any guide loaded at all. Distinguishes "nothing tried yet" from "loaded but empty". */

@@ -50,6 +50,8 @@ fun LiveTvRoute(navController: NavController) {
         onChannelFocused = viewModel::onChannelFocused,
         onSetAdultFilter = viewModel::setAdultFilter,
         onSetEpgSourceEnabled = viewModel::setEpgSourceEnabled,
+        onSetCategoryVisible = viewModel::setCategoryVisible,
+        onSelectCategory = viewModel::selectCategory,
         onNextChannel = viewModel::nextChannel,
         onPreviousChannel = viewModel::previousChannel,
         onExitFullscreen = {

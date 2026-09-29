@@ -31,9 +31,13 @@
     <string name="live_tv_settings_adult_filter_sub">Filtro por palavras-chave: pega os nomes conhecidos, não todos</string>
     <string name="live_tv_settings_sources">Fontes de guia</string>
     <string name="live_tv_settings_sources_disclosure">As guias por país vêm do epgshare01.online, um terceiro. Ative só o que precisar.</string>
+    <string name="live_tv_settings_categories">Categorias na barra</string>
+    <string name="live_tv_settings_categories_sub">Todos e Favoritos aparecem sempre</string>
     <string name="live_tv_settings_source_addon">Dos seus addons</string>
     <string name="live_tv_settings_source_third_party">Terceiro (epgshare01.online)</string>
     <string name="live_tv_settings_source_user">Adicionada por você</string>
+    <string name="live_tv_category_all">Todos</string>
+    <string name="live_tv_category_favorites">Favoritos</string>
     <string name="live_tv_view_grid">Guia</string>
     <string name="live_tv_fullscreen_hint">Cima / Baixo: trocar de canal · Voltar: sair</string>
     <string name="live_tv_fullscreen_error">Não foi possível reproduzir este canal</string>

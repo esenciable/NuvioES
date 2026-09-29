@@ -5,8 +5,11 @@ import com.nuvio.tv.ext.livetv.data.epg.EpgGuideIndex
 import com.nuvio.tv.ext.livetv.data.epg.EpgProgram
 import com.nuvio.tv.ext.livetv.data.epg.EpgSnapshot
 import com.nuvio.tv.ext.livetv.data.epg.XmlTvGuide
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategory
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategoryId
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
+import com.nuvio.tv.ext.livetv.domain.model.canBeHidden
+import com.nuvio.tv.ext.livetv.domain.model.preferenceKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -126,6 +129,85 @@ class LiveTvRowsTest {
         )
         assertEquals("Deportes", categories[3].addonCatalogName)
         assertNull("built-ins carry no addon name", categories[0].addonCatalogName)
+    }
+
+    @Test
+    fun `an empty hidden set keeps every category visible`() {
+        val categories = LiveTvRows.categoriesFor(listOf(catalog("vivo", "En vivo")))
+
+        val visible = LiveTvRows.visibleCategoriesFor(categories, emptySet())
+
+        assertEquals(categories.map { it.id }, visible.map { it.id })
+    }
+
+    @Test
+    fun `a hidden id removes only that category`() {
+        val categories = LiveTvRows.categoriesFor(
+            listOf(
+                catalog("vivo", "En vivo"),
+                catalog("deportes", "Deportes")
+            )
+        )
+        val hidden = LiveTvCategoryId.Addon(ADDON, "deportes").preferenceKey
+
+        val visible = LiveTvRows.visibleCategoriesFor(categories, setOf(hidden))
+
+        assertEquals(
+            listOf(
+                LiveTvCategoryId.All,
+                LiveTvCategoryId.Favorites,
+                LiveTvCategoryId.Addon(ADDON, "vivo")
+            ),
+            visible.map { it.id }
+        )
+    }
+
+    @Test
+    fun `an unknown hidden id is tolerated and hides nothing`() {
+        val categories = LiveTvRows.categoriesFor(listOf(catalog("vivo", "En vivo")))
+
+        val visible = LiveTvRows.visibleCategoriesFor(categories, setOf("not-a-category", "addon:"))
+
+        assertEquals(categories.map { it.id }, visible.map { it.id })
+    }
+
+    @Test
+    fun `All and Favorites cannot be hidden`() {
+        val categories = LiveTvRows.categoriesFor(listOf(catalog("vivo", "En vivo")))
+
+        assertFalse(LiveTvCategoryId.All.canBeHidden)
+        assertFalse(LiveTvCategoryId.Favorites.canBeHidden)
+        assertTrue(LiveTvCategoryId.Addon(ADDON, "vivo").canBeHidden)
+
+        val visible = LiveTvRows.visibleCategoriesFor(
+            categories,
+            setOf(LiveTvCategoryId.All.preferenceKey, LiveTvCategoryId.Favorites.preferenceKey)
+        )
+
+        assertEquals(
+            listOf(
+                LiveTvCategoryId.All,
+                LiveTvCategoryId.Favorites,
+                LiveTvCategoryId.Addon(ADDON, "vivo")
+            ),
+            visible.map { it.id }
+        )
+    }
+
+    @Test
+    fun `a category key is built from identity, never from display text`() {
+        val categories = listOf(
+            LiveTvCategory(id = LiveTvCategoryId.All, addonCatalogName = "Todos"),
+            LiveTvCategory(id = LiveTvCategoryId.Favorites, addonCatalogName = "Favoritos"),
+            LiveTvCategory(
+                id = LiveTvCategoryId.Addon(ADDON, "vivo"),
+                addonCatalogName = "En vivo"
+            )
+        )
+
+        assertEquals("all", categories[0].id.preferenceKey)
+        assertEquals("favorites", categories[1].id.preferenceKey)
+        assertEquals("addon:$ADDON|vivo", categories[2].id.preferenceKey)
     }
 
     @Test

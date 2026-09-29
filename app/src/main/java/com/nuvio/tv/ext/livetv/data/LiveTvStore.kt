@@ -39,6 +39,7 @@ class LiveTvStore @Inject constructor(
 
     private val hideAdultKey = booleanPreferencesKey("livetv_hide_adult_channels")
     private val disabledEpgSourcesKey = stringSetPreferencesKey("livetv_disabled_epg_sources")
+    private val hiddenCategoriesKey = stringSetPreferencesKey("livetv_hidden_categories")
 
     val hideAdultChannels: Flow<Boolean> = profileManager.activeProfileId.flatMapLatest { profileId ->
         factory.get(profileId, FEATURE).data.map { preferences ->
@@ -52,6 +53,19 @@ class LiveTvStore @Inject constructor(
         }
     }
 
+    /**
+     * The slider categories the user removed, by [com.nuvio.tv.ext.livetv.domain.model.preferenceKey].
+     *
+     * Stored as the hidden set, like the guide sources: empty means "everything visible", which is the
+     * default. The two built-in categories are not hideable, so nothing here can remove `All` or
+     * `Favorites` even if a stray key found its way in.
+     */
+    val hiddenCategoryIds: Flow<Set<String>> = profileManager.activeProfileId.flatMapLatest { profileId ->
+        factory.get(profileId, FEATURE).data.map { preferences ->
+            preferences[hiddenCategoriesKey] ?: emptySet()
+        }
+    }
+
     suspend fun setHideAdultChannels(hide: Boolean) {
         store().edit { it[hideAdultKey] = hide }
     }
@@ -60,6 +74,14 @@ class LiveTvStore @Inject constructor(
         store().edit { preferences ->
             val current = preferences[disabledEpgSourcesKey] ?: defaultDisabledEpgSourceIds()
             preferences[disabledEpgSourcesKey] = if (enabled) current - sourceId else current + sourceId
+        }
+    }
+
+    /** Turns a slider category on ([visible] true) or off by adding or removing it from the hidden set. */
+    suspend fun setCategoryVisible(categoryKey: String, visible: Boolean) {
+        store().edit { preferences ->
+            val current = preferences[hiddenCategoriesKey] ?: emptySet()
+            preferences[hiddenCategoriesKey] = if (visible) current - categoryKey else current + categoryKey
         }
     }
 
