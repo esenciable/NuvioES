@@ -36,10 +36,21 @@ ALLOWED_UPSTREAM_FILES=(
   "app/src/main/java/com/nuvio/tv/ui/navigation/NuvioNavHost.kt"
   "app/src/main/java/com/nuvio/tv/MainActivity.kt"
   "app/build.gradle.kts"
+  "app/src/main/java/com/nuvio/tv/ui/screens/settings/SettingsScreen.kt"
 )
 
-MAX_UPSTREAM_FILES=4
-MAX_UPSTREAM_LINES=40
+# Los limites subieron de 4/40 a 5/60 el 2026-09-29, con aprobacion explicita del dueno, para
+# poner los ajustes de la feature donde estan los de la app original (categoria en
+# SettingsScreen) en vez de un panel interno.
+#
+# Costo medido contra el fork: ~17 lineas (import del icono, miembro del enum, bloque
+# SettingsSectionSpec, entrada en el mapa de FocusRequester y rama del `when`). El presupuesto
+# pasa de 33 a ~50.
+#
+# La disciplina sigue igual: subir el techo otra vez es una decision aparte, no un efecto
+# secundario de agregar una pantalla.
+MAX_UPSTREAM_FILES=5
+MAX_UPSTREAM_LINES=60
 
 # ---------------------------------------------------------------------------
 # Archivos y directorios PROPIOS. Nada de comodines amplios: upstream también

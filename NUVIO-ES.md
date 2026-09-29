@@ -29,13 +29,19 @@ semanas. Por eso:
 
 | Métrica | Límite | Verificado por |
 | --- | --- | --- |
-| Archivos de upstream modificados | **≤ 4** | `nuvioes/check-conflict-budget.sh` (falla el build) |
-| Líneas enganchadas en archivos de upstream | **≤ 40** | ídem |
+| Archivos de upstream modificados | **≤ 5** | `nuvioes/check-conflict-budget.sh` (falla el build) |
+| Líneas enganchadas en archivos de upstream | **≤ 60** | ídem |
 | Dependencias nuevas en `:app` | **0** | revisión |
 | Binarios vendorizados | **0** | revisión |
 | Credenciales en el repositorio | **0** | gitleaks en CI |
 
-### Los 4 archivos de upstream que tocamos
+### Los 5 archivos de upstream que tocamos
+
+> **El quinto se agregó el 2026-09-29, con aprobación explícita del dueño**, y la excepción está
+escrita acá para que no se vuelva costumbre. Motivo: los ajustes de la feature deben vivir **donde el
+usuario ya busca ajustes**, no en un panel interno. Costo medido contra el fork: **~17 líneas** (import
+del ícono, miembro del enum `SettingsCategory`, bloque `SettingsSectionSpec`, entrada en el mapa de
+`FocusRequester` y rama del `when`). El presupuesto pasó de **33/40 a ~50/60**.
 
 | # | Archivo | Enlace |
 | --- | --- | --- |
@@ -43,6 +49,7 @@ semanas. Por eso:
 | 2 | `app/src/main/java/com/nuvio/tv/ui/navigation/NuvioNavHost.kt` | 1 import + 1 `composable` que delega en `LiveTvRoute(navController)` |
 | 3 | `app/src/main/java/com/nuvio/tv/MainActivity.kt` | el ítem del menú lateral |
 | 4 | `app/build.gradle.kts` | el default propio del updater in-app |
+| 5 | `app/src/main/java/com/nuvio/tv/ui/screens/settings/SettingsScreen.kt` | la categoría de ajustes de TV en vivo |
 
 **Todo lo demás es nuestro y vive aislado:**
 

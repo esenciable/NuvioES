@@ -157,10 +157,14 @@ elegido así **para no gastar líneas de enganche**.
 El dueño quiere que estén donde están los de la app original: una **categoría dentro de `SettingsScreen`**,
 que es lo que hizo el fork.
 
-### ⚠️ Esto es una decisión de presupuesto, y hay que tomarla a conciencia
+### ✅ APROBADO: esto ya es una tarea, no una decisión pendiente
 
-`SettingsScreen.kt` **no** está entre nuestros 4 archivos permitidos, así que esto lo convierte en el
-**5.º enganche**. Lo que cuesta, medido en el fork:
+El dueño aprobó el 5.º enganche (~17 líneas / 5 archivos). Los ajustes van a **donde están los de la app
+original**: una categoría dentro de `SettingsScreen`.
+El guardarraíl y `NUVIO-ES.md` ya están actualizados: límite nuevo **5 archivos / 60 líneas**
+(estábamos en 4/40 con 33 usadas).
+
+Lo que costó, medido contra el fork:
 
 | Punto de enganche | Líneas |
 | --- | --- |
@@ -183,12 +187,12 @@ ajustes, y 17 líneas es un precio bajo comparado con el resto del proyecto. Per
 presupuesto**, así que se aprueba o no se hace.
 
 ### Tareas
-- [ ] Decisión del dueño sobre el presupuesto
-- [ ] Si se aprueba: `SettingsCategory.TV_CHANNELS` + spec + focusRequester + rama del `when`, con el
-      panel reutilizado tal cual (no reescribirlo)
-- [ ] Actualizar `ALLOWED_UPSTREAM_FILES` y los límites del guardarraíl, con la justificación en `NUVIO-ES.md`
+- [x] Decisión del dueño sobre el presupuesto: **aprobado**
+- [ ] `SettingsCategory.TV_CHANNELS` + spec + focusRequester + rama del `when`, con el panel reutilizado
+      tal cual (no reescribirlo)
 - [ ] Quitar el botón "Ajustes" del encabezado de nuestra pantalla (o dejarlo como atajo, a decidir)
 - [ ] Verificar en dispositivo: Ajustes → TV en vivo → el panel, con foco correcto y Atrás que vuelve
+- [ ] Actualizar la tabla de enganches y el conteo en `NUVIO-ES.md` cuando esté hecho (medir, no estimar)
 
 ---
 
@@ -273,4 +277,4 @@ y **elegir en ajustes qué categorías aparecen en ese slider**.
    foco del slider evita apilar dos cambios de foco.
 2. **Tarea 1 (zapping).** El valor más alto y cero presupuesto.
 3. **Tarea 4 (slider)**, que también depende del foco.
-4. **Tarea 3 (ajustes en su sitio)** al final, y **solo si el dueño aprueba** el 5.º enganche.
+4. **Tarea 3 (ajustes en su sitio)** al final: **ya está aprobada**, y el guardarraíl la admite.
