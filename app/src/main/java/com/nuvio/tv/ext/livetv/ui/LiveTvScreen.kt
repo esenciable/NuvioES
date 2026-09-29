@@ -50,6 +50,7 @@ import com.nuvio.tv.ext.livetv.data.epg.EpgFailure
 import com.nuvio.tv.ext.livetv.data.epg.EpgFailureReason
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannelRow
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvPlayRequest
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPreview
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
@@ -69,18 +70,35 @@ import com.nuvio.tv.ui.theme.NuvioTheme
 @Composable
 fun LiveTvScreen(
     state: LiveTvUiState,
+    fullscreenRequest: LiveTvPlayRequest?,
     onBack: () -> Unit,
     onManageAddons: () -> Unit,
     onRetry: () -> Unit,
     onPlayChannel: (String) -> Unit,
     onChannelFocused: (String) -> Unit,
     onSetAdultFilter: (Boolean) -> Unit,
-    onSetEpgSourceEnabled: (String, Boolean) -> Unit
+    onSetEpgSourceEnabled: (String, Boolean) -> Unit,
+    onNextChannel: () -> Unit,
+    onPreviousChannel: () -> Unit,
+    onExitFullscreen: () -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showGrid by remember { mutableStateOf(false) }
 
+    // One player for the whole screen. The preview and the fullscreen surface share it, so opening a
+    // channel does not build a second ExoPlayer and zapping does not build one per channel.
+    val liveTvPlayer = rememberLiveTvPlayer()
+
+    // Where to send focus when the list comes back. It lives above the fullscreen branch, keyed by
+    // stableKey, so switching surfaces does not throw it away -- and it follows the channel that is
+    // playing, so leaving fullscreen lands on the channel the user zapped to, not on the one they left.
+    var rememberedKey by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(fullscreenRequest?.channel?.stableKey) {
+        fullscreenRequest?.let { rememberedKey = it.channel.stableKey }
+    }
+
     // Back closes whichever panel is open and stays on the screen; that is what a panel owes the user.
+    // The fullscreen surface registers its own Back handler for as long as it is shown.
     BackHandler {
         when {
             showGrid -> showGrid = false
@@ -90,7 +108,22 @@ fun LiveTvScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (showSettings) {
+        val request = fullscreenRequest
+        if (state.isFullscreen && request != null) {
+            // The programme on air comes from the same rows the list shows, so the HUD and the list
+            // never disagree about what a channel is broadcasting.
+            val playingRow = state.channels.firstOrNull {
+                it.channel.stableKey == request.channel.stableKey
+            }
+            LiveTvFullscreenSurface(
+                liveTvPlayer = liveTvPlayer,
+                request = request,
+                programmeTitle = playingRow?.now?.title,
+                onPrevious = onPreviousChannel,
+                onNext = onNextChannel,
+                onExit = onExitFullscreen
+            )
+        } else if (showSettings) {
             LiveTvSettingsPane(
                 state = state,
                 onSetAdultFilter = onSetAdultFilter,
@@ -122,6 +155,9 @@ fun LiveTvScreen(
 
             LiveTvStatus.READY -> ChannelList(
                 state = state,
+                liveTvPlayer = liveTvPlayer,
+                rememberedKey = rememberedKey,
+                onRememberKey = { rememberedKey = it },
                 onPlayChannel = onPlayChannel,
                 onChannelFocused = onChannelFocused,
                 onOpenSettings = { showSettings = true },
@@ -135,6 +171,9 @@ fun LiveTvScreen(
 @Composable
 private fun ChannelList(
     state: LiveTvUiState,
+    liveTvPlayer: LiveTvPlayer,
+    rememberedKey: String?,
+    onRememberKey: (String) -> Unit,
     onPlayChannel: (String) -> Unit,
     onChannelFocused: (String) -> Unit,
     onOpenSettings: () -> Unit,
@@ -144,9 +183,6 @@ private fun ChannelList(
     val requesters = remember { mutableStateMapOf<String, FocusRequester>() }
     val firstKey = state.channels.firstOrNull()?.channel?.stableKey
     var focusedKey by remember { mutableStateOf<String?>(null) }
-    // Survives the list being disposed and recomposed -- which is what happens when the user goes to
-    // the player and comes back, and is the whole reason the focus used to reset to channel 1.
-    var rememberKey by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Focus goes back to WHERE THE USER WAS, not to the top.
     //
@@ -157,7 +193,7 @@ private fun ChannelList(
     //   2. The list scrolls to the remembered row BEFORE asking for focus, because a row that is not
     //      composed has no focus node to receive it.
     LaunchedEffect(Unit) {
-        val target = rememberKey?.takeIf { key -> state.channels.any { it.channel.stableKey == key } }
+        val target = rememberedKey?.takeIf { key -> state.channels.any { it.channel.stableKey == key } }
             ?: firstKey
         focusedKey = target
         val index = state.channels.indexOfFirst { it.channel.stableKey == target }
@@ -270,7 +306,7 @@ private fun ChannelList(
                         onClick = { onPlayChannel(row.channel.stableKey) },
                         onFocused = {
                             focusedKey = row.channel.stableKey
-                            rememberKey = row.channel.stableKey
+                            onRememberKey(row.channel.stableKey)
                             onChannelFocused(row.channel.stableKey)
                         },
                         modifier = Modifier.focusRequester(requester)
@@ -284,6 +320,7 @@ private fun ChannelList(
                 row = state.channels.firstOrNull { it.channel.stableKey == focusedKey },
                 preview = state.preview,
                 previewFailure = state.previewFailure,
+                liveTvPlayer = liveTvPlayer,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -351,6 +388,7 @@ private fun ChannelDetails(
     row: LiveTvChannelRow?,
     preview: LiveTvPreview?,
     previewFailure: LiveTvPlayFailure?,
+    liveTvPlayer: LiveTvPlayer,
     modifier: Modifier = Modifier
 ) {
     if (row == null) {
@@ -396,6 +434,7 @@ private fun ChannelDetails(
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
         if (preview != null && preview.channelKey == row.channel.stableKey) {
             LiveTvPreviewSurface(
+                liveTvPlayer = liveTvPlayer,
                 url = preview.url,
                 headers = preview.headers,
                 modifier = Modifier

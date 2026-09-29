@@ -97,6 +97,13 @@ data class LiveTvUiState(
     val disabledEpgSourceIds: Set<String> = emptySet(),
     /** The channel whose streams are being resolved, so the row can say so instead of looking stuck. */
     val resolvingChannelKey: String? = null,
+    /**
+     * Whether the in-screen player is covering the list.
+     *
+     * Fullscreen lives in our own screen, not in upstream's player, so the screen owns the decision and
+     * zapping can read from the same filtered list the list itself shows.
+     */
+    val isFullscreen: Boolean = false,
     /** Why the last attempt to open a channel failed, if it did. */
     val playFailure: LiveTvPlayFailure? = null,
     /** What the preview panel is playing. Null means nothing resolved (yet, or at all). */

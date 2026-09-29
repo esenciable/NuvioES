@@ -35,4 +35,6 @@
     <string name="live_tv_settings_source_third_party">Tercero (epgshare01.online)</string>
     <string name="live_tv_settings_source_user">Agregada por ti</string>
     <string name="live_tv_view_grid">Guía</string>
+    <string name="live_tv_fullscreen_hint">Arriba / Abajo: cambiar de canal · Atrás: salir</string>
+    <string name="live_tv_fullscreen_error">No se pudo reproducir este canal</string>
 </resources>

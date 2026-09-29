@@ -17,7 +17,90 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import com.nuvio.tv.ui.screens.player.NuvioExoPlayerPerformanceHelper
 import com.nuvio.tv.ui.screens.player.PlayerPlaybackNetworking
+
+/**
+ * The one ExoPlayer the Live TV screen owns.
+ *
+ * ### One player, not one per channel
+ *
+ * Zapping changes channels many times a minute. Building a player per channel would throw away the
+ * decoders, the renderers and the warmed network stack on every press; the reference fork went the
+ * other way and kept a *pool*, which is the same problem with more bookkeeping. A single instance that
+ * takes a new media source is both the cheapest and the simplest thing that holds up.
+ *
+ * The same instance backs the split-screen preview and the fullscreen surface. They are never composed
+ * at the same time -- fullscreen replaces the screen -- so there is no contention, and leaving the
+ * preview for fullscreen does not rebuild anything.
+ *
+ * ### Why the per-channel media source is built here
+ *
+ * Headers are part of the addon's stream, and a data source factory bakes them in. Rather than rebuild
+ * the player when they change, each load builds a media source for that channel only and hands it to the
+ * same player, which is what makes reuse across channels correct and not just cheap.
+ */
+@UnstableApi
+internal class LiveTvPlayer(context: Context) {
+
+    private val appContext = context.applicationContext
+    private var loadedUrl: String? = null
+    private var loadedHeaders: Map<String, String>? = null
+
+    val player: ExoPlayer = ExoPlayer.Builder(appContext)
+        .setMediaSourceFactory(
+            DefaultMediaSourceFactory(PlayerPlaybackNetworking.createDataSourceFactory(appContext))
+        )
+        // Nuvio's own memory tuning, so a low-end TV box gets the RAM-tiered buffers instead of the
+        // stock defaults. Both are single calls into upstream, and neither modifies an upstream file.
+        .setLoadControl(NuvioExoPlayerPerformanceHelper.buildLoadControl(appContext))
+        .setBandwidthMeter(NuvioExoPlayerPerformanceHelper.buildBandwidthMeter(appContext))
+        .build()
+        .apply {
+            // Browsing must be silent; fullscreen turns it back on. See the preview doc.
+            volume = 0f
+        }
+
+    /**
+     * Loads [url] on the shared player.
+     *
+     * [force] reloads even when the same stream is already playing -- that is what "Reintentar" after a
+     * playback error does. Without it, walking from the preview into fullscreen on the same channel
+     * would restart a stream that is already playing.
+     */
+    fun play(url: String, headers: Map<String, String>?, force: Boolean = false) {
+        val resolvedHeaders = headers.orEmpty()
+        if (!force && url == loadedUrl && resolvedHeaders == loadedHeaders) return
+
+        loadedUrl = url
+        loadedHeaders = resolvedHeaders
+        val dataSourceFactory = PlayerPlaybackNetworking.createDataSourceFactory(appContext, resolvedHeaders)
+        val mediaSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(liveMediaItem(url))
+        player.setMediaSource(mediaSource)
+        player.prepare()
+        player.playWhenReady = true
+    }
+
+    fun release() {
+        runCatching { player.release() }
+    }
+}
+
+/**
+ * Creates the one player and releases it with the composition.
+ *
+ * Owned by the screen, not by a surface: that is the whole reason the preview and fullscreen can share
+ * an instance without either one releasing the other's player mid-transition.
+ */
+@Composable
+internal fun rememberLiveTvPlayer(): LiveTvPlayer {
+    val context = LocalContext.current
+    val liveTvPlayer = remember { LiveTvPlayer(context) }
+    DisposableEffect(liveTvPlayer) {
+        onDispose { liveTvPlayer.release() }
+    }
+    return liveTvPlayer
+}
 
 /**
  * The split-screen preview: what the currently focused channel is broadcasting.
@@ -27,14 +110,7 @@ import com.nuvio.tv.ui.screens.player.PlayerPlaybackNetworking
  * The reference fork played its preview at full volume and started after a 450 ms pause on a focused
  * row, so moving around a list made the television shout at every stop. Nobody asked for audio while
  * browsing; the sound belongs to a channel the user deliberately opened. Anyone who wants sound presses
- * OK.
- *
- * ### Released with the screen, not with the process
- *
- * The reference fork kept a `@Singleton` player whose `yield()` and `release()` were never called
- * anywhere -- dead code guarding a real leak -- and left it running when the user moved on. Here the
- * player is created by the composition and released by `onDispose`, so leaving the screen frees it, and
- * a screen with no preview never builds one at all.
+ * OK, which opens the fullscreen surface.
  *
  * ### Why the live target offset is set here
  *
@@ -45,25 +121,18 @@ import com.nuvio.tv.ui.screens.player.PlayerPlaybackNetworking
  */
 @Composable
 internal fun LiveTvPreviewSurface(
+    liveTvPlayer: LiveTvPlayer,
     url: String,
     headers: Map<String, String>?,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val focusHost = Modifier.focusProperties { canFocus = false }
 
-    // Rebuilt when the headers change, because they are baked into the data source factory.
-    val player = remember(headers) { createPreviewPlayer(context, headers.orEmpty()) }
-
-    // Keyed on the player itself, so a rebuilt one releases its predecessor instead of leaking it.
-    DisposableEffect(player) {
-        onDispose { runCatching { player.release() } }
-    }
-
-    LaunchedEffect(player, url) {
-        player.setMediaItem(liveMediaItem(url))
-        player.prepare()
-        player.playWhenReady = true
+    // The player is shared, so its volume is set on every preview mount: leaving fullscreen must not
+    // leave a browsing list shouting.
+    LaunchedEffect(liveTvPlayer, url, headers) {
+        liveTvPlayer.player.volume = 0f
+        liveTvPlayer.play(url, headers)
     }
 
     AndroidView(
@@ -77,21 +146,10 @@ internal fun LiveTvPreviewSurface(
                 isFocusableInTouchMode = false
                 // The SurfaceView inside would otherwise be able to take focus on its own.
                 descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-                this.player = player
+                this.player = liveTvPlayer.player
             }
         }
     )
-}
-
-private fun createPreviewPlayer(context: Context, headers: Map<String, String>): ExoPlayer {
-    val dataSourceFactory = PlayerPlaybackNetworking.createDataSourceFactory(context, headers)
-    return ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
-        .build()
-        .apply {
-            // Browsing must be silent. See the class doc.
-            volume = 0f
-        }
 }
 
 private fun liveMediaItem(url: String): MediaItem = MediaItem.Builder()

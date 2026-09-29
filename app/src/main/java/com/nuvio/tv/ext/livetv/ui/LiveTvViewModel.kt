@@ -17,6 +17,7 @@ import com.nuvio.tv.ext.livetv.domain.AdultChannelFilter
 import com.nuvio.tv.ext.livetv.domain.EpgSourceDiscovery
 import com.nuvio.tv.ext.livetv.domain.LiveTvCatalog
 import com.nuvio.tv.ext.livetv.domain.LiveTvRows
+import com.nuvio.tv.ext.livetv.domain.LiveTvZapping
 import com.nuvio.tv.ext.livetv.domain.TvCatalogSelector
 import com.nuvio.tv.ext.livetv.domain.model.EpgSource
 import com.nuvio.tv.ext.livetv.domain.model.EpgSourceOrigin
@@ -139,6 +140,41 @@ class LiveTvViewModel @Inject constructor(
 
     fun setEpgSourceEnabled(sourceId: String, enabled: Boolean) {
         viewModelScope.launch { liveTvStore.setEpgSourceEnabled(sourceId, enabled) }
+    }
+
+    /**
+     * Moves the in-screen player down one channel, wrapping at the end.
+     *
+     * Zapping runs over [channels] -- the list the screen can actually see, already filtered -- so it
+     * cannot step onto a channel the parental filter removed or step outside the category. The current
+     * channel is the one the player is on, which is the same one focus reports.
+     */
+    fun nextChannel() {
+        zap(step = 1)
+    }
+
+    /** Moves the in-screen player up one channel, wrapping at the start. */
+    fun previousChannel() {
+        zap(step = -1)
+    }
+
+    private fun zap(step: Int) {
+        val nextKey = LiveTvZapping.neighbourKey(
+            channels = channels,
+            currentKey = _focusedChannel.value,
+            step = step
+        ) ?: return
+        playChannel(nextKey)
+    }
+
+    /**
+     * Leaves the in-screen player and goes back to the channel list.
+     *
+     * Only flips the flag: the channel the player was on stays focused, so the list restores to it and
+     * a second OK reopens the same channel without re-resolving anything.
+     */
+    fun exitFullscreen() {
+        _state.update { it.copy(isFullscreen = false) }
     }
 
     /**
@@ -342,6 +378,12 @@ class LiveTvViewModel @Inject constructor(
                 _state.update { it.copy(playFailure = LiveTvPlayFailure.NO_STREAMS) }
                 return@launch
             }
+
+            // What the fullscreen player is on is also what focus reports, so the next zap starts from
+            // the channel that is actually playing rather than from wherever the list was left.
+            previewCache.put(stableKey, stream)
+            _focusedChannel.value = stableKey
+            _state.update { it.copy(isFullscreen = true) }
             _playRequests.send(LiveTvPlayRequest(channel = channel, stream = stream))
         }
     }
