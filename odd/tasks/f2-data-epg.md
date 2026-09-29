@@ -41,13 +41,11 @@ no necesita.
 ### T1 — Modelo y descubrimiento de canales
 - [ ] `ext/livetv/domain/model/` — modelo de canal con clave estable (`stableKey`)
 - [ ] `ext/livetv/domain/ChannelCategory.kt` — identidad de categoría **tipada**, nunca texto de UI
-      (el fork de referencia usaba el literal `'Favoritos'` como dato y traducir la etiqueta rompía los
-      favoritos)
 - [ ] `ext/livetv/data/LiveTvSource.kt` — lectura de catálogos `type: 'tv'` vía `AddonRepository` /
-      `AddonApi` de upstream
+      `AddonApi` de upstream (firmas ya verificadas: `getInstalledAddons(): Flow<List<Addon>>`,
+      `AddonApi.getCatalog(@Url): Response<CatalogResponseDto>`, `enabledAddons()`)
 - [ ] Detección **declarativa** de addons de TV (el usuario marca cuáles son), **no** heurística por
-      subcadena: la del fork usaba palabras en portugués (`brazuca`, `sexta`, `canal`, `ao vivo`) y
-      colaba catálogos de películas
+      subcadena: la del fork usaba palabras en portugués (`brazuca`, `sexta`, `canal`, `ao vivo`)
 
 ### T2 — Fuentes de EPG: del addon y del usuario
 - [ ] Derivar `epgUrl` del addon a partir de su URL de manifiesto (ver arriba) — **sin configuración**
@@ -56,14 +54,45 @@ no necesita.
       `PE1`, `UY1`, `ES1`, `US1`, además de `BR1` y `PT1`
 - [ ] Divulgar en la UI que la guía viene de fuentes externas, y permitir desactivarlas todas
 
-### T3 — Parser de XMLTV por streaming, con topes
-**Es la pieza de mayor riesgo de la fase.** El fork leía el gzip entero en un `String` sin límite y
-parseaba con un escáner de strings escrito a mano.
-- [ ] Usar `XmlPullParser` (streaming, sin resolución de entidades externas y rechazando DTD)
-- [ ] **Tope de bytes durante la descompresión** (corta el stream al superarlo) y **tope de programas**:
-      sin esto un gzip bomb tumba una TV de 1-2 GB
-- [ ] Tests: XMLTV real con entidades (`&amp;`, `&#233;`) y comillas simples; ventana temporal; canal sin
-      programas; **gzip sobredimensionado que debe cortarse**
+### T3 — Parser de XMLTV por streaming, con topes ✅
+
+**Cerrada.** `ext/livetv/data/epg/` — `XmlTvParser.kt`, `CappedInputStream.kt`, `EpgModels.kt`, con **15 tests en verde**.
+
+**Elección de tecnología**: **SAX** (`javax.xml.parsers.SAXParserFactory`), no `android.util.Xml`. SAX corre en unit tests de JVM puro (los de `android.*` son stubs), decodifica entidades gratis y hace streaming real. Upstream no usa ni SAX ni XmlPull, así que no había idioma de la casa que respetar.
+
+- [x] Parser con `XmlPullParser`/SAX, **sin resolución de entidades externas**
+- [x] **Tope de bytes en el lado DESCOMPRIMIDO** (el que ataca una bomba) y tope de programas
+- [x] Tests: entidades (`&amp;`, `&#233;`), DOCTYPE real, DTD externo, ventana temporal, canal sin programas, gzip, **bomba de descompresión**, XML malformado
+
+> ### 🔴 El hallazgo que cambió el diseño: los XMLTV reales traen DOCTYPE
+>
+> Verificado contra la fuente de producción (`epgshare01.online`, archivo `AR1`):
+>
+> ```xml
+> <?xml version="1.0" encoding="UTF-8"?>
+> <!DOCTYPE tv SYSTEM "xmltv.dtd">
+> ```
+>
+> O sea que **el consejo habitual de endurecimiento (`disallow-doctype-decl`) habría rechazado TODOS los archivos legítimos**. Está deliberadamente **no** puesto.
+>
+> El riesgo real de esa cabecera es otro y más acotado: `SYSTEM "xmltv.dtd"` invita al parser a **descargar** `xmltv.dtd`. Eso se bloquea desactivando la carga de DTD/entidades externas, **más un `EntityResolver` que responde vacío a toda referencia externa** como respaldo para plataformas que no soportan esas features (Android no las soporta todas).
+>
+> **Y se verifica de verdad**: el test escribe un DTD real en disco con `<!ENTITY xxe "EXPANDED-FROM-DISK">`, lo referencia, y exige que esa cadena **nunca** llegue al documento.
+
+> ### Otras decisiones que salieron de los tests
+>
+> | Situación | Decisión |
+> | --- | --- |
+> | Tope superado | **Falla** con `EpgLimitExceededException`, no trunca. Una guía truncada es indistinguible de una completa |
+> | `DefaultHandler` | Se sobrescriben `fatalError` y `error` para relanzar: por defecto **traga** los errores fatales y un XML malformado devolvería una guía parcial que parece buena |
+> | SAX envuelve las excepciones | Se desenvuelve `EpgLimitExceededException` de la cadena de causas, para que "fuente demasiado grande" y "documento malformado" sean distinguibles |
+> | Sin offset en la fecha | Un timestamp de 14 dígitos se lee como UTC en vez de descartarse |
+> | `<icon>` repetido | Gana el primero (los feeds reales lo repiten) |
+> | Programas fuera de la ventana | Se cuentan en `programsSkippedOutOfWindow` en vez de esconderse |
+>
+> ### Dato del feed real que valida el diseño de emparejamiento
+>
+> El archivo `AR1` trae ids tipo gatotv (`Canal.13.de.Argentina.(El Trece).ar`), **no** los `cyx_…` del addon propio. Confirma que el emparejamiento canal↔EPG tiene que ser **por nombre normalizado**, no por id — y que el estricto de `RF-36` importa mucho.
 
 ### T4 — Repositorio de EPG con swap atómico
 - [ ] Descargar y parsear **primero**, y recién entonces hacer el swap: el fork borraba las cachés *antes*
