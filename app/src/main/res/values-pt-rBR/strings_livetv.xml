@@ -15,7 +15,7 @@
     <string name="live_tv_play_failed_no_streams">Este canal não tem nenhuma fonte disponível</string>
     <string name="live_tv_play_failed_resolve">Não foi possível consultar o addon</string>
     <string name="live_tv_preview_loading">Carregando prévia…</string>
-    <string name="live_tv_adult_filter_on">Filtro de conteúdo adulto ativo (por palavras-chave) — %1 canais ocultos</string>
+    <string name="live_tv_adult_filter_on">Filtro de conteúdo adulto ativo (por palavras-chave) — %1$d canais ocultos</string>
     <string name="live_tv_guide_failed">Guia: %1$s — %2$s</string>
     <string name="live_tv_guide_reason_download">não foi possível baixar</string>
     <string name="live_tv_guide_reason_too_large">o arquivo é grande demais</string>
