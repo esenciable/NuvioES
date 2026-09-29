@@ -41,8 +41,21 @@ el presupuesto de 4 archivos y 40 líneas esté probado como sostenible, no ante
 
 - [x] `nuvioes/sync-upstream.sh` — `rebase --onto <tag-nuevo> <tag-viejo>`, respaldo de `main`, rama
       desechable, verificación del presupuesto, bump de `UPSTREAM_BASE`
-- [ ] Probado contra un tag real (queda pendiente de que exista un tag estable nuevo; se puede ensayar
-      contra `1.1.0-beta.1`)
+- [x] **Ensayado de punta a punta contra deriva real de upstream**: `rebase --onto upstream/dev 1.1.0-beta.2`
+      reaplicó nuestros commits sobre **85 commits** de avance y salió **limpio**
+- [x] Añadida `SYNC_BRANCH` (default `main`) para poder ensayar el rebase sin tocar `main`
+- [x] Tres guardas: la rama origen existe, tiene commits propios encima del pin, y el script del
+      presupuesto existe y es ejecutable
+
+> **Dos bugs reales que solo aparecieron por ensayar el rebase.** Ninguno se veía leyendo el código.
+> 1. `sync-upstream.sh` seguía llamando a `./scripts/check-conflict-budget.sh`, ruta anterior a mover el
+>    tooling fuera del `scripts/` ignorado. El rebase salía limpio y el paso siguiente abortaba.
+> 2. Peor: el script rebaseaba `main` fijo. Corrido con el trabajo en una rama de feature, reaplicaba
+>    **cero commits**, imprimía *"rebase LIMPIO"* y dejaba el árbol de upstream sin nada nuestro.
+>    **Un no-op silencioso que parece éxito es el peor fallo posible para este script.**
+> 3. Y el guardarraíl medía nuestro delta contra el pin **viejo**: durante un sync contaba toda la deriva
+>    de upstream como si fuera nuestra, y fallaba con cientos de archivos ajenos. Habría bloqueado
+>    **toda** sincronización legítima. Ahora la ref de comparación es un argumento explícito.
 
 ### T4 — CI: detección temprana de deriva
 
@@ -53,8 +66,9 @@ el presupuesto de 4 archivos y 40 líneas esté probado como sostenible, no ante
 ### T5 — Entorno de compilación
 
 - [x] `nuvioes/gradle.sh` — wrapper que resuelve el JDK sin tocar `gradle.properties` de upstream (0 archivos)
-- [ ] Verificado que Gradle arranca: `./nuvioes/gradle.sh --version`
-- [ ] Verificado `./nuvioes/gradle.sh tasks` (puede necesitar claves en `local.properties`)
+- [x] Verificado que Gradle arranca: **Gradle 8.13, JVM 21.0.12.1**, `JAVA_HOME` resuelto solo
+- [x] Verificado `./nuvioes/gradle.sh tasks` → **`BUILD SUCCESSFUL in 1m 13s`**, con flavors `full`/`playstore`,
+      variantes, tareas de lint y de test unitario
 
 ### T6 — Documentación del repositorio
 
@@ -78,10 +92,15 @@ nunca se commitea**: el harness parece completo y no está versionado.
 
 ## Criterio de cierre de F0
 
-1. `./nuvioes/check-conflict-budget.sh` corre y da OK con 0 archivos / 0 líneas.
-2. El mismo script **falla** cuando se modifica a propósito un archivo de upstream no permitido.
-3. `./nuvioes/gradle.sh --version` arranca (JDK resuelto sin exportar nada a mano).
-4. Los dos workflows están commiteados y son válidos.
+1. `./nuvioes/check-conflict-budget.sh` corre y da OK con 0 archivos / 0 líneas. ✅
+2. El mismo script **falla** cuando se modifica a propósito un archivo de upstream no permitido. ✅
+   (`AndroidManifest.xml` → exit 1, archivo listado; y un enganche permitido → contado, exit 0)
+3. `./nuvioes/gradle.sh --version` arranca (JDK resuelto sin exportar nada a mano). ✅
+4. Los dos workflows están commiteados y son válidos. ✅
+5. `./nuvioes/sync-upstream.sh` ensayado sobre deriva real de upstream: rebase limpio, presupuesto OK,
+   `UPSTREAM_BASE` y pin actualizados. ✅
+
+**F0 cerrado.**
 
 ---
 
@@ -91,6 +110,7 @@ nunca se commitea**: el harness parece completo y no está versionado.
 | --- | --- |
 | 2026-09-28 | Arranque. Pin, identidad, `UPSTREAM_BASE`, tag `upstream-pin`. Escritos los 3 scripts, los 2 workflows y `NUVIO-ES.md`. |
 | 2026-09-28 | Verificado el guardarraíl en sus dos direcciones (falla con violación, cuenta el enganche permitido). Detectada y esquivada la trampa del `.gitignore` de upstream: el tooling se movió de `scripts/` a `nuvioes/`. |
+| 2026-09-28 | **Ensayado el rebase real** contra `upstream/dev`: 85 commits de avance, rebase limpio. El ensayo destapó 3 bugs que no se veían leyendo el código (ruta stale, no-op silencioso, base de comparación equivocada). Gradle verificado: `BUILD SUCCESSFUL`. **F0 cerrado.** |
 
 ---
 
