@@ -138,6 +138,7 @@ los tres bugs habrían llegado a F1 con el harness aparentando estar completo.**
 | 2026-09-28 | Verificado el guardarraíl en sus dos direcciones (falla con violación, cuenta el enganche permitido). Detectada y esquivada la trampa del `.gitignore` de upstream: el tooling se movió de `scripts/` a `nuvioes/`. |
 | 2026-09-28 | **Ensayado el rebase real** contra `upstream/dev`: 85 commits de avance, rebase limpio. El ensayo destapó 3 bugs que no se veían leyendo el código (ruta stale, no-op silencioso, base de comparación equivocada). Gradle verificado: `BUILD SUCCESSFUL`. **F0 cerrado.** |
 | 2026-09-29 | Publicado: fork `esenciable/NuvioES`. Rama de integración renombrada a `nuvioes` para no colisionar con el `main` de upstream. Autoría reescrita a `rstoute`. Documentos convertidos de voseo a tuteo. Job de deriva anclado a `ref: nuvioes`. |
+| 2026-09-29 | Ejecutado el job de deriva: **2 bugs más** encontrados y corregidos (selección de tag y canal de aviso muerto). 3 ejecuciones verificadas. **F0 cerrado del todo.** |
 
 ---
 
@@ -154,8 +155,39 @@ los tres bugs habrían llegado a F1 con el harness aparentando estar completo.**
 - ~~**Merge de `feat/f0-harness`**~~ **Hecho**, fast-forward.
 - ~~**Publicar**~~ **Hecho**: rama `nuvioes` + tag `upstream-pin` pusheados; `origin` y `upstream` configurados.
 
-## Pendiente antes de F1
+## Pendiente antes de F1 (resuelto)
 
-- **Ensayar el job `upstream-drift` una vez** con `workflow_dispatch`, para confirmar que GitHub Actions
-  corre en este fork (los workflows programados de un fork recién creado a veces necesitan habilitación).
-- Nada más: **F0 está cerrado y publicado.**
+- [x] ~~Ensayar el job `upstream-drift` una vez~~ **Hecho**, y valió la pena: al ejecutarlo aparecieron
+      **dos bugs más**, ninguno visible leyendo el workflow.
+
+### Los dos bugs que solo aparecieron al ejecutar el job de deriva
+
+**1. Selección de tag equivocada.** Elegía el tag estable más nuevo filtrando `^X.Y.Z$`, lo que **excluye
+nuestro propio pin** (`1.1.0-beta.2`). Terminaba eligiendo `1.0.0`, que es más **viejo**, y rebaseaba
+**hacia atrás**: un resultado sin ningún sentido, presentado como verde.
+
+**2. El aviso nunca podía funcionar.** Los forks tienen los *issues* **deshabilitados** por defecto. El paso
+que abría el issue habría fallado justo al intentar avisar: un job de detección con el canal de
+notificación muerto.
+
+Y un tercero, al re-ejecutar el primer arreglo: **filtrar sólo por `^X.Y.Z$` tampoco alcanza**, pero
+`--sort=-v:refname` a secas pone primero los tags que **no son versiones** — nuestro propio `upstream-pin` —
+así que "el tag más nuevo" era nuestro tag y el job rebaseaba sobre sí mismo informando *"0 commits"*.
+
+**Solución**: filtro `^v?[0-9]+\.[0-9]+\.[0-9]+` (incluye pre-releases, excluye tags que no son versiones);
+el resultado va **siempre** al resumen del job; el job **falla** cuando hay conflicto o señales de TV en vivo
+—un job programado que falla notifica al dueño, y eso no depende de ninguna configuración del repositorio—;
+y el issue queda como intento *best-effort* (con los issues ya habilitados en el repo).
+
+**Verificado**: tres ejecuciones. La última reporta **sin deriva** y saltea correctamente los pasos de aviso,
+que es el comportamiento correcto porque el pin ya está en el tag más nuevo.
+
+> **Patrón que se repite en todo el harness**: los tres bugs de F0 y estos dos se encontraron **ejecutando**,
+> nunca leyendo. Un harness sin ensayar es una promesa, no una garantía.
+
+## F0 — cerrado y verificado
+
+- Pin, modelo de ramas, guardarraíl, script de sincronización, detección de deriva y wrapper de Gradle:
+  todo en pie y ensayado.
+- Publicado en `esenciable/NuvioES`, rama `nuvioes`.
+- **Sigue F1.**
