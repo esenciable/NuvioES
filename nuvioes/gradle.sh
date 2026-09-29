@@ -7,8 +7,8 @@
 # el presupuesto de conflicto del PRD (sección 7.3). Este wrapper vive en un archivo
 # nuestro, así que cuesta 0.
 #
-# Uso:  ./scripts/gradle.sh tasks
-#       ./scripts/gradle.sh :app:assembleDebug
+# Uso:  ./nuvioes/gradle.sh tasks
+#       ./nuvioes/gradle.sh :app:assembleDebug
 #
 set -euo pipefail
 

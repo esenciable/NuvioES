@@ -3,8 +3,8 @@
 # Sincroniza nuestra serie de parches sobre un tag nuevo de upstream.
 # Ver docs/04-runbook-sync-upstream.md (en el repo de análisis) para el procedimiento completo.
 #
-#   ./scripts/sync-upstream.sh 1.2.0              # rebase en una rama desechable
-#   ./scripts/sync-upstream.sh 1.2.0 --tag-latest # elige el tag estable más nuevo
+#   ./nuvioes/sync-upstream.sh 1.2.0              # rebase en una rama desechable
+#   ./nuvioes/sync-upstream.sh 1.2.0 --tag-latest # elige el tag estable más nuevo
 #
 # Nunca mergea upstream/dev dentro de main: siempre rebase sobre un tag.
 #
@@ -67,7 +67,7 @@ if git rebase --onto "$TARGET_TAG" "$OLD_BASE" "$WORK"; then
   echo "==> Rebase LIMPIO"
 
   echo "==> Verificando presupuesto de conflicto"
-  ./scripts/check-conflict-budget.sh "$TARGET_TAG"
+  ./nuvioes/check-conflict-budget.sh "$TARGET_TAG"
 
   echo "$TARGET_TAG" > UPSTREAM_BASE
   git add UPSTREAM_BASE

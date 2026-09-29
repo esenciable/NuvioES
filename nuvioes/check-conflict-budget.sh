@@ -5,7 +5,7 @@
 # Falla si la diferencia contra el pin de upstream toca archivos no permitidos,
 # o si la superficie de enganche supera 4 archivos / 40 líneas.
 #
-# Uso:  ./scripts/check-conflict-budget.sh [tag-base]
+# Uso:  ./nuvioes/check-conflict-budget.sh [tag-base]
 #
 set -euo pipefail
 

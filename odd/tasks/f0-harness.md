@@ -78,9 +78,9 @@ nunca se commitea**: el harness parece completo y no está versionado.
 
 ## Criterio de cierre de F0
 
-1. `./scripts/check-conflict-budget.sh` corre y da OK con 0 archivos / 0 líneas.
+1. `./nuvioes/check-conflict-budget.sh` corre y da OK con 0 archivos / 0 líneas.
 2. El mismo script **falla** cuando se modifica a propósito un archivo de upstream no permitido.
-3. `./scripts/gradle.sh --version` arranca (JDK resuelto sin exportar nada a mano).
+3. `./nuvioes/gradle.sh --version` arranca (JDK resuelto sin exportar nada a mano).
 4. Los dos workflows están commiteados y son válidos.
 
 ---
