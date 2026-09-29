@@ -20,7 +20,7 @@ el presupuesto de 4 archivos y 40 líneas esté probado como sostenible, no ante
 
 - [x] Clonar upstream y renombrar el remoto a `upstream`
 - [x] Congelar el pin en `1.1.0-beta.2` (tag `d8c50017`); no hay `1.1.0` estable todavía
-- [x] Crear `main` desde el tag y el tag `upstream-pin`
+- [x] Crear `nuvioes` desde el tag y el tag `upstream-pin`
 - [x] Escribir `UPSTREAM_BASE`
 - [x] Identidad de commits como `lordmacu` (local al repo), sin pie de IA
 
@@ -39,18 +39,18 @@ el presupuesto de 4 archivos y 40 líneas esté probado como sostenible, no ante
 
 ### T3 — Script de sincronización
 
-- [x] `nuvioes/sync-upstream.sh` — `rebase --onto <tag-nuevo> <tag-viejo>`, respaldo de `main`, rama
+- [x] `nuvioes/sync-upstream.sh` — `rebase --onto <tag-nuevo> <tag-viejo>`, respaldo de `nuvioes`, rama
       desechable, verificación del presupuesto, bump de `UPSTREAM_BASE`
 - [x] **Ensayado de punta a punta contra deriva real de upstream**: `rebase --onto upstream/dev 1.1.0-beta.2`
       reaplicó nuestros commits sobre **85 commits** de avance y salió **limpio**
-- [x] Añadida `SYNC_BRANCH` (default `main`) para poder ensayar el rebase sin tocar `main`
+- [x] Añadida `SYNC_BRANCH` (default `nuvioes`) para poder ensayar el rebase sin tocar `nuvioes`
 - [x] Tres guardas: la rama origen existe, tiene commits propios encima del pin, y el script del
       presupuesto existe y es ejecutable
 
 > **Dos bugs reales que solo aparecieron por ensayar el rebase.** Ninguno se veía leyendo el código.
 > 1. `sync-upstream.sh` seguía llamando a `./scripts/check-conflict-budget.sh`, ruta anterior a mover el
 >    tooling fuera del `scripts/` ignorado. El rebase salía limpio y el paso siguiente abortaba.
-> 2. Peor: el script rebaseaba `main` fijo. Corrido con el trabajo en una rama de feature, reaplicaba
+> 2. Peor: el script rebaseaba `nuvioes` fijo. Corrido con el trabajo en una rama de feature, reaplicaba
 >    **cero commits**, imprimía *"rebase LIMPIO"* y dejaba el árbol de upstream sin nada nuestro.
 >    **Un no-op silencioso que parece éxito es el peor fallo posible para este script.**
 > 3. Y el guardarraíl medía nuestro delta contra el pin **viejo**: durante un sync contaba toda la deriva
@@ -124,7 +124,7 @@ los tres bugs habrían llegado a F1 con el harness aparentando estar completo.**
 
 ## Pendiente antes de F1
 
-- **Merge de `feat/f0-harness` a `main`** — lo decide el dueño.
+- **Merge de `feat/f0-harness` a `nuvioes`** — lo decide el dueño.
 - **Publicar**: crear el fork real en GitHub y pushear. Requiere OK explícito (es publicación).
   Ver «Pendiente de decisión del dueño» al final de este documento.
 

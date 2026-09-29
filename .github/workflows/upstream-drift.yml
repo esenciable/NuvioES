@@ -25,6 +25,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Anclado explícitamente a nuestra rama de integración.
+          # Un evento `schedule` hace checkout de la rama por DEFECTO del repositorio, y
+          # en un fork de NuvioTV esa rama es `dev`. Sin este anclaje, el job diario
+          # rebasearía la rama equivocada y reportaría un resultado sin sentido.
+          ref: nuvioes
 
       - name: Traer upstream
         run: |

@@ -72,19 +72,19 @@ upstream/dev              ──●──●──●──●──●──●
                     1.1.0 ──────┤  TAG: pin anterior (UPSTREAM_BASE)
                     1.2.0 ──────┤  TAG: pin nuevo
                                 │
-main                  tag1 ─────┼──●──●──●          nuestros commits
+nuvioes               tag1 ─────┼──●──●──●          nuestros commits
                                 │
-                      rebase --onto tag2 tag1 main
+                      rebase --onto tag2 tag1 nuvioes
 ```
 
-**Nunca se mergea `upstream/dev` dentro de `main`.** Siempre:
+**Nunca se mergea `upstream/dev` dentro de `nuvioes`.** Siempre:
 
 ```bash
 ./nuvioes/sync-upstream.sh --tag-latest
 ```
 
-El script respalda `main`, rebasea sobre una rama desechable, verifica el presupuesto y recién entonces
-te dice cómo avanzar. Si hay conflictos, los lista y no toca `main`.
+El script respalda `nuvioes`, rebasea sobre una rama desechable, verifica el presupuesto y recién entonces
+te dice cómo avanzar. Si hay conflictos, los lista y no toca `nuvioes`.
 
 ---
 

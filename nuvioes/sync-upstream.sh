@@ -5,7 +5,7 @@
 #
 #   ./nuvioes/sync-upstream.sh 1.2.0              # rebase en una rama desechable
 #   ./nuvioes/sync-upstream.sh --tag-latest       # elige el tag estable más nuevo
-#   SYNC_BRANCH=feat/x ./nuvioes/sync-upstream.sh 1.2.0   # ensayar sin tocar main
+#   SYNC_BRANCH=feat/x ./nuvioes/sync-upstream.sh 1.2.0   # ensayar sin tocar la rama de integración
 #
 # Nunca mergea upstream/dev dentro de main: siempre rebase sobre un tag.
 #
@@ -26,9 +26,15 @@ if [ ! -f UPSTREAM_BASE ]; then
 fi
 OLD_BASE="$(tr -d '[:space:]' < UPSTREAM_BASE)"
 
-# Rama a sincronizar. Por defecto main. Overridable para poder ensayar el rebase
-# sin tocar main:  SYNC_BRANCH=feat/x ./nuvioes/sync-upstream.sh <tag>
-SRC_BRANCH="${SYNC_BRANCH:-main}"
+# Rama a sincronizar. Por defecto nuvioes, nuestra rama de integración.
+# Overridable para poder ensayar el rebase sin tocarla:
+#   SYNC_BRANCH=feat/x ./nuvioes/sync-upstream.sh <tag>
+#
+# ¿Por qué no se llama `main`? Porque upstream TIENE una rama `main`. Con el
+# mismo nombre, el botón "Sync fork" de GitHub ofrecería descartar nuestros
+# commits, y un push nuestro sería rechazado por non-fast-forward. Un nombre que
+# upstream no tiene elimina las dos cosas de raíz.
+SRC_BRANCH="${SYNC_BRANCH:-nuvioes}"
 
 git rev-parse --verify --quiet "refs/heads/$SRC_BRANCH" >/dev/null \
   || { echo "ERROR: no existe la rama $SRC_BRANCH" >&2; exit 1; }
