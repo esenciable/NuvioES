@@ -38,14 +38,32 @@ no necesita.
 
 ## Tareas
 
-### T1 — Modelo y descubrimiento de canales
-- [ ] `ext/livetv/domain/model/` — modelo de canal con clave estable (`stableKey`)
-- [ ] `ext/livetv/domain/ChannelCategory.kt` — identidad de categoría **tipada**, nunca texto de UI
-- [ ] `ext/livetv/data/LiveTvSource.kt` — lectura de catálogos `type: 'tv'` vía `AddonRepository` /
-      `AddonApi` de upstream (firmas ya verificadas: `getInstalledAddons(): Flow<List<Addon>>`,
-      `AddonApi.getCatalog(@Url): Response<CatalogResponseDto>`, `enabledAddons()`)
-- [ ] Detección **declarativa** de addons de TV (el usuario marca cuáles son), **no** heurística por
-      subcadena: la del fork usaba palabras en portugués (`brazuca`, `sexta`, `canal`, `ao vivo`)
+### T1 — Modelo y descubrimiento de canales ✅
+
+**Cerrada.** `ext/livetv/domain/` con **17 tests en verde** (`LiveTvChannel`, `LiveTvCategory`, `TvCatalogSelector`, `LiveTvPaging`).
+
+- [x] Modelo de canal con clave estable: **`(addonBaseUrl, id)`**, nunca la posición en la lista
+- [x] Identidad de categoría **tipada** (`LiveTvCategoryId`), sin texto de UI
+- [x] Selección **declarativa** de catálogos: `ContentType.TV` o `CHANNEL`, más el marcado del usuario
+- [x] Política de paginado con tope y detección de falta de progreso
+
+> ### 🔍 Hallazgo de arquitectura: upstream ya resuelve la descarga de catálogos
+>
+> `CatalogRepository.getCatalog(...)` devuelve `Flow<NetworkResult<CatalogRow>>` y **ya tiene** el armador de URLs resuelto: preserva la query del addon (el token), maneja `skip` y codifica los argumentos. **No lo reimplementamos.** Beneficios: menos código nuestro, upstream mantiene el paginado y el parseo, y **`NetworkResult` nos da gratis la distinción entre "vacío" y "falló"** que el fork de referencia no tenía (`RF-50`).
+>
+> `CatalogRow` ya trae `items: List<MetaPreview>` mapeado y `nextSkip` / `hasMore` calculados.
+
+> ### Por qué no se confía en `hasMore`
+>
+> El paginado se detiene por **cuatro** razones, no una: página vacía, página **sin ítems nuevos**, el addon dice que no hay más, o se llegó al tope de páginas. La segunda existe porque un addon que **ignora `skip`** devuelve la página 1 para siempre: confiar en `hasMore` haría 15 requests en cada carga. El fork de referencia arrastraba `consecutiveDuplicatePages` dentro del modelo de la fila, metiendo una preocupación de paginado en el modelo de UI.
+
+> ### Regresión del fork, fijada con un test
+>
+> `does not guess from names`: un addon llamado *"Live TV Addon"* con catálogos `type: movie` y `type: series` **no aporta ningún canal**. El fork matcheaba subcadenas contra ids y nombres, con una lista que incluía palabras en portugués (`brazuca`, `sexta`, `canal`, `ao vivo`), así que un catálogo de películas llamado "TV Shows" entraba como fuente de canales.
+>
+> Y `category identity does not depend on the display name`: la categoría se identifica por `(addonBaseUrl, catalogId)`, así que traducir la etiqueta **no puede** romper los favoritos. En el fork, el literal `"Favoritos"` **era** el valor de la categoría.
+>
+> El texto que se muestra viene de dos fuentes distintas y no se mezcla: las categorías propias (`All`, `Favorites`) resuelven su etiqueta desde **nuestros** string resources; las del addon usan el nombre que publicó el addon, que es dato, no copy nuestra.
 
 ### T2 — Fuentes de EPG: del addon y del usuario
 - [ ] Derivar `epgUrl` del addon a partir de su URL de manifiesto (ver arriba) — **sin configuración**
