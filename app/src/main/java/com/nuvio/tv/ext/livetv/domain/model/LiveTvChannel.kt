@@ -16,6 +16,12 @@ data class LiveTvChannel(
     val addonName: String,
     val catalogId: String,
     val catalogName: String,
+    /**
+     * The catalog's declared type, which is what the addon expects in `/stream/{type}/{id}.json`.
+     * Carried on the channel because the stream request needs it and looking the catalog up again to
+     * find it would be work for nothing.
+     */
+    val apiType: String,
     val name: String,
     val logoUrl: String?,
     val posterUrl: String?,
@@ -41,13 +47,15 @@ fun MetaPreview.toLiveTvChannel(
     addonBaseUrl: String,
     addonName: String,
     catalogId: String,
-    catalogName: String
+    catalogName: String,
+    apiType: String
 ): LiveTvChannel = LiveTvChannel(
     id = id,
     addonBaseUrl = addonBaseUrl,
     addonName = addonName,
     catalogId = catalogId,
     catalogName = catalogName,
+    apiType = apiType,
     name = name,
     logoUrl = logo?.takeIf(String::isNotBlank) ?: poster?.takeIf(String::isNotBlank),
     posterUrl = poster?.takeIf(String::isNotBlank),

@@ -187,6 +187,7 @@ class LiveTvRowsTest {
         addonName = "Addon",
         catalogId = "vivo",
         catalogName = "En vivo",
+        apiType = "tv",
         name = name,
         logoUrl = null,
         posterUrl = null,

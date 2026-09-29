@@ -111,7 +111,8 @@ class LiveTvChannelTest {
         addonBaseUrl = ADDON,
         addonName = "Addon",
         catalogId = CATALOG,
-        catalogName = "Vivo"
+        catalogName = "Vivo",
+        apiType = "tv"
     )
 
     private fun channel(
@@ -124,6 +125,7 @@ class LiveTvChannelTest {
         addonName = "Addon",
         catalogId = catalogId,
         catalogName = "Vivo",
+        apiType = "tv",
         name = "Canal $id",
         logoUrl = null,
         posterUrl = null,

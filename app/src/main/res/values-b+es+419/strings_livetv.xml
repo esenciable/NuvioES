@@ -9,7 +9,11 @@
     <string name="live_tv_retry">Reintentar</string>
     <string name="live_tv_channels_count">%1$d canales</string>
     <string name="live_tv_no_guide">Sin datos de guía</string>
-    <string name="live_tv_select_channel">Elige un canal para ver sus detalles</string>
+    <string name="live_tv_select_channel">Muévete por la lista para ver los detalles de un canal</string>
+    <string name="live_tv_resolving">Abriendo…</string>
+    <string name="live_tv_up_next">A continuación: %1$s</string>
+    <string name="live_tv_play_failed_no_streams">Este canal no tiene ninguna fuente disponible</string>
+    <string name="live_tv_play_failed_resolve">No se pudo consultar el addon</string>
     <string name="live_tv_guide_failed">Guía: %1$s — %2$s</string>
     <string name="live_tv_guide_reason_download">no se pudo descargar</string>
     <string name="live_tv_guide_reason_too_large">el archivo es demasiado grande</string>

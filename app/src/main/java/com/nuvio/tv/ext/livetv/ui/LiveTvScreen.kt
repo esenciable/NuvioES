@@ -44,21 +44,22 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.R
 import com.nuvio.tv.ext.livetv.data.epg.EpgFailure
 import com.nuvio.tv.ext.livetv.data.epg.EpgFailureReason
+import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannelRow
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
 import com.nuvio.tv.ui.theme.NuvioTheme
 
 /**
- * Live TV: the channels your addons already publish.
+ * Live TV: the channels your addons already publish, with their programming.
  *
- * The guide is not wired in yet, so a row says "sin guía" rather than showing an empty programme slot
- * that looks like a bug. Everything else is real data.
+ * The details side follows **focus** rather than a confirmed selection, which is what makes browsing a
+ * list on a remote pleasant: moving down a row tells you who that channel is. OK is reserved for the one
+ * thing that costs something -- resolving a stream and opening the player.
  *
  * Focus is requested explicitly whenever the channel list changes, and every focusable element has an
- * action: the empty state opens the addon manager, a channel row shows that channel's details. An empty
- * screen with nothing focusable is a dead end on a remote-controlled device -- that is blocker A4 from
- * the audit of the reference fork, and this screen does not repeat it.
+ * action. An empty screen with nothing focusable is a dead end on a remote-controlled device; that is
+ * blocker A4 from the audit of the reference fork, and this screen does not repeat it.
  */
 @Composable
 fun LiveTvScreen(
@@ -66,8 +67,7 @@ fun LiveTvScreen(
     onBack: () -> Unit,
     onManageAddons: () -> Unit,
     onRetry: () -> Unit,
-    onSelectChannel: (String) -> Unit,
-    onSelectCategory: (com.nuvio.tv.ext.livetv.domain.model.LiveTvCategoryId) -> Unit
+    onPlayChannel: (String) -> Unit
 ) {
     BackHandler { onBack() }
 
@@ -89,11 +89,7 @@ fun LiveTvScreen(
                 onAction = onRetry
             )
 
-            LiveTvStatus.READY -> ChannelList(
-                state = state,
-                onSelectChannel = onSelectChannel,
-                onSelectCategory = onSelectCategory
-            )
+            LiveTvStatus.READY -> ChannelList(state = state, onPlayChannel = onPlayChannel)
         }
     }
 }
@@ -101,15 +97,16 @@ fun LiveTvScreen(
 @Composable
 private fun ChannelList(
     state: LiveTvUiState,
-    onSelectChannel: (String) -> Unit,
-    onSelectCategory: (com.nuvio.tv.ext.livetv.domain.model.LiveTvCategoryId) -> Unit
+    onPlayChannel: (String) -> Unit
 ) {
     val listFocusRequester = remember { FocusRequester() }
     val firstKey = state.channels.firstOrNull()?.channel?.stableKey
+    var focusedKey by remember { mutableStateOf<String?>(null) }
 
     // Focus follows the list: entering the screen, and after a filter change leaves the selection
     // pointing at nothing, focus has to land somewhere declared rather than nowhere.
     LaunchedEffect(firstKey) {
+        focusedKey = firstKey
         runCatching { listFocusRequester.requestFocus() }
     }
 
@@ -119,13 +116,16 @@ private fun ChannelList(
             style = MaterialTheme.typography.titleMedium,
             color = NuvioTheme.colors.TextSecondary
         )
+
         // The guide's state is stated rather than implied. "Downloaded but carries no programming for
         // these channels" and "the download failed" look identical on a row, and the difference is the
         // whole diagnosis.
         val guideNote = when {
             state.guideFailure != null -> guideFailureText(state.guideFailure)
-            state.guideLoaded && state.guideProgrammeCount == 0 -> stringResource(R.string.live_tv_guide_no_programmes)
-            state.guideProgrammeCount > 0 -> stringResource(R.string.live_tv_guide_programmes, state.guideProgrammeCount)
+            state.guideLoaded && state.guideProgrammeCount == 0 ->
+                stringResource(R.string.live_tv_guide_no_programmes)
+            state.guideProgrammeCount > 0 ->
+                stringResource(R.string.live_tv_guide_programmes, state.guideProgrammeCount)
             else -> null
         }
         guideNote?.let { note ->
@@ -135,6 +135,18 @@ private fun ChannelList(
                 color = NuvioTheme.colors.TextSecondary
             )
         }
+
+        state.playFailure?.let { failure ->
+            Text(
+                text = when (failure) {
+                    LiveTvPlayFailure.NO_STREAMS -> stringResource(R.string.live_tv_play_failed_no_streams)
+                    LiveTvPlayFailure.RESOLVE_FAILED -> stringResource(R.string.live_tv_play_failed_resolve)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = NuvioTheme.colors.TextSecondary
+            )
+        }
+
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
 
         Row(modifier = Modifier.fillMaxSize()) {
@@ -143,15 +155,13 @@ private fun ChannelList(
                 verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs)
             ) {
                 items(items = state.channels, key = { it.channel.stableKey }) { row ->
+                    val isFirst = row.channel.stableKey == firstKey
                     ChannelRow(
                         row = row,
-                        selected = row.channel.stableKey == state.selectedChannelKey,
-                        onClick = { onSelectChannel(row.channel.stableKey) },
-                        modifier = if (row.channel.stableKey == firstKey) {
-                            Modifier.focusRequester(listFocusRequester)
-                        } else {
-                            Modifier
-                        }
+                        resolving = state.resolvingChannelKey == row.channel.stableKey,
+                        onClick = { onPlayChannel(row.channel.stableKey) },
+                        onFocused = { focusedKey = row.channel.stableKey },
+                        modifier = if (isFirst) Modifier.focusRequester(listFocusRequester) else Modifier
                     )
                 }
             }
@@ -159,7 +169,7 @@ private fun ChannelList(
             Spacer(modifier = Modifier.width(NuvioTheme.spacing.lg))
 
             ChannelDetails(
-                row = state.channels.firstOrNull { it.channel.stableKey == state.selectedChannelKey },
+                row = state.channels.firstOrNull { it.channel.stableKey == focusedKey },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -169,8 +179,9 @@ private fun ChannelList(
 @Composable
 private fun ChannelRow(
     row: LiveTvChannelRow,
-    selected: Boolean,
+    resolving: Boolean,
     onClick: () -> Unit,
+    onFocused: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -178,14 +189,21 @@ private fun ChannelRow(
     val shape = RoundedCornerShape(12.dp)
     val background = when {
         focused -> NuvioTheme.colors.SecondaryVariant
-        selected -> NuvioTheme.colors.BackgroundElevated
         else -> NuvioTheme.colors.Surface
+    }
+    val subtitle = when {
+        resolving -> stringResource(R.string.live_tv_resolving)
+        row.hasGuide -> row.now?.title ?: row.next?.title.orEmpty()
+        else -> stringResource(R.string.live_tv_no_guide)
     }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused()
+            }
             .clip(shape)
             .background(background)
             .border(
@@ -205,11 +223,7 @@ private fun ChannelRow(
             overflow = TextOverflow.Ellipsis
         )
         Text(
-            text = if (row.hasGuide) {
-                row.now?.title ?: row.next?.title.orEmpty()
-            } else {
-                stringResource(R.string.live_tv_no_guide)
-            },
+            text = subtitle,
             style = MaterialTheme.typography.bodySmall,
             color = NuvioTheme.colors.TextSecondary,
             maxLines = 1,
@@ -257,22 +271,54 @@ private fun ChannelDetails(row: LiveTvChannelRow?, modifier: Modifier = Modifier
                 color = NuvioTheme.colors.TextSecondary
             )
         }
-        row.channel.description?.let { description ->
+
+        // The programming is the point of the guide being there at all, so it gets the prominent slot.
+        row.now?.let { programme ->
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
             Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium,
+                text = programme.title,
+                style = MaterialTheme.typography.titleMedium,
                 color = NuvioTheme.colors.TextPrimary,
-                maxLines = 8,
+                fontWeight = FontWeight.SemiBold
+            )
+            programme.description?.let { description ->
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = NuvioTheme.colors.TextSecondary,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        row.next?.let { next ->
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.xs))
+            Text(
+                text = stringResource(R.string.live_tv_up_next, next.title),
+                style = MaterialTheme.typography.labelMedium,
+                color = NuvioTheme.colors.TextSecondary,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }
+
         if (!row.hasGuide) {
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
             Text(
                 text = stringResource(R.string.live_tv_no_guide),
                 style = MaterialTheme.typography.labelMedium,
                 color = NuvioTheme.colors.TextSecondary
+            )
+        }
+
+        row.channel.description?.let { description ->
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = NuvioTheme.colors.TextSecondary,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

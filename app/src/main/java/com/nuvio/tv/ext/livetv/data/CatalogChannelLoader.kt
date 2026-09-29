@@ -60,7 +60,8 @@ class CatalogChannelLoader(
                         addonBaseUrl = page.addonBaseUrl,
                         addonName = page.addonName,
                         catalogId = catalog.catalogId,
-                        catalogName = catalog.catalogName
+                        catalogName = catalog.catalogName,
+                        apiType = catalog.apiType
                     )
                     channels.putIfAbsent(channel.stableKey, channel)
                 }

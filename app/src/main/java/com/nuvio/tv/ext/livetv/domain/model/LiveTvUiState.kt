@@ -1,6 +1,8 @@
 package com.nuvio.tv.ext.livetv.domain.model
 
 import com.nuvio.tv.ext.livetv.data.epg.EpgFailure
+import com.nuvio.tv.ext.livetv.domain.LiveTvPlayableStream
+import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
 
 /** One programme placed on the timeline. */
 data class LiveTvProgramme(
@@ -59,8 +61,6 @@ data class LiveTvUiState(
     val channels: List<LiveTvChannelRow> = emptyList(),
     val categories: List<LiveTvCategory> = emptyList(),
     val selectedCategory: LiveTvCategoryId = LiveTvCategoryId.All,
-    /** What the details side shows. Null until the user picks a channel. */
-    val selectedChannelKey: String? = null,
     val totalChannelCount: Int = 0,
     val guideProgrammeCount: Int = 0,
     /** Whether any guide loaded at all. Distinguishes "nothing tried yet" from "loaded but empty". */
@@ -74,5 +74,20 @@ data class LiveTvUiState(
     val guideFailure: EpgFailure? = null,
     /** Catalogs that could not be read. Surfaced instead of swallowed. */
     val failedCatalogs: Int = 0,
+    /** The channel whose streams are being resolved, so the row can say so instead of looking stuck. */
+    val resolvingChannelKey: String? = null,
+    /** Why the last attempt to open a channel failed, if it did. */
+    val playFailure: LiveTvPlayFailure? = null,
     val errorMessage: String? = null
+)
+
+/**
+ * A channel the user asked to watch, with its stream already resolved.
+ *
+ * Delivered as an event rather than read from [LiveTvUiState]: opening the player is a one-shot action,
+ * and a value sitting in state would re-trigger navigation on every recomposition.
+ */
+data class LiveTvPlayRequest(
+    val channel: LiveTvChannel,
+    val stream: LiveTvPlayableStream
 )
