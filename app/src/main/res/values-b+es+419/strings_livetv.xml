@@ -36,6 +36,8 @@
     <string name="live_tv_settings_source_addon">De tus addons</string>
     <string name="live_tv_settings_source_third_party">Tercero (epgshare01.online)</string>
     <string name="live_tv_settings_source_user">Agregada por ti</string>
+    <string name="live_tv_settings_section_title">TV en vivo</string>
+    <string name="live_tv_settings_section_subtitle">Canales, fuentes de guía y filtro parental</string>
     <string name="live_tv_category_all">Todos</string>
     <string name="live_tv_category_favorites">Favoritos</string>
     <string name="live_tv_view_grid">Guía</string>

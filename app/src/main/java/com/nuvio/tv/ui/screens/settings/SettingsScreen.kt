@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Explore
@@ -92,6 +93,7 @@ import com.nuvio.tv.R
 import com.nuvio.tv.core.build.AppFeaturePolicy
 import com.nuvio.tv.domain.model.ExperienceMode
 import com.nuvio.tv.domain.model.SettingsUiStyle
+import com.nuvio.tv.ext.livetv.ui.LiveTvSettingsEntry
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -105,6 +107,7 @@ internal enum class SettingsCategory {
     APPEARANCE,
     LAYOUT,
     CONTENT_DISCOVERY,
+    TV_CHANNELS,
     INTEGRATION,
     PLAYBACK,
     ADVANCED,
@@ -205,6 +208,13 @@ private fun rememberSettingsSectionSpecs() = listOf(
         title = stringResource(R.string.settings_content_discovery),
         icon = Icons.Default.Explore,
         subtitle = stringResource(R.string.settings_content_discovery_subtitle),
+        destination = SettingsSectionDestination.Inline
+    ),
+    SettingsSectionSpec(
+        category = SettingsCategory.TV_CHANNELS,
+        title = stringResource(R.string.live_tv_settings_section_title),
+        icon = Icons.Rounded.Tv,
+        subtitle = stringResource(R.string.live_tv_settings_section_subtitle),
         destination = SettingsSectionDestination.Inline
     ),
     SettingsSectionSpec(
@@ -318,6 +328,7 @@ fun SettingsScreen(
             SettingsCategory.PROFILES to FocusRequester(),
             SettingsCategory.LAYOUT to FocusRequester(),
             SettingsCategory.CONTENT_DISCOVERY to FocusRequester(),
+            SettingsCategory.TV_CHANNELS to FocusRequester(),
             SettingsCategory.INTEGRATION to FocusRequester(),
             SettingsCategory.PLAYBACK to FocusRequester(),
             SettingsCategory.ADVANCED to FocusRequester(),
@@ -1032,6 +1043,13 @@ private fun SettingsDetailPane(
             onNavigateToAuthQrSignIn = onNavigateToAuthQrSignIn,
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.ACCOUNT]
+            } else {
+                null
+            }
+        )
+        SettingsCategory.TV_CHANNELS -> LiveTvSettingsEntry(
+            initialFocusRequester = if (allowDetailAutofocus) {
+                contentFocusRequesters[SettingsCategory.TV_CHANNELS]
             } else {
                 null
             }
