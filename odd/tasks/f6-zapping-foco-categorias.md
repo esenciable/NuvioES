@@ -56,18 +56,38 @@ val nextIndex = if (currentIndex in list.indices) (currentIndex + 1) % list.size
 - **Por `stableKey`, no por posición.**
 - **Envuelve** (`% list.size`): del último canal se vuelve al primero.
 
-### Decisión de arquitectura (y su contrapartida)
+### Decisión: UN SOLO reproductor, el nuestro (decidido por el dueño)
 
 **Nuestro propio fullscreen, reutilizando el reproductor del panel. Cuesta CERO enganches**, porque la
 pantalla ya es dueña de la decisión de pantalla completa (igual que el panel de ajustes).
 
-Contrapartida honesta: esa superficie es un reproductor **más simple** que el de upstream (sin
-subtítulos, pistas ni Dolby Vision). Por eso hay que conservar **las dos** salidas:
+Los canales de TV no necesitan subtítulos ni pistas, así que mantener dos reproductores es complejidad sin
+premio. **Y la contra que yo había planteado no se sostiene**: miré el builder de upstream y lo que aporta
+de más es menos de lo que parecía.
 
-| Acción | Va a |
-| --- | --- |
-| OK sobre un canal | Nuestro fullscreen, con zapping ARRIBA/ABAHO |
-| Una acción explícita ("abrir en el reproductor") | `Screen.Player` de upstream, con todo |
+```kotlin
+.setLoadControl(loadControl)                       // es UN helper invocable desde nuestro código
+.setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)   // apagado A PROPÓSITO
+```
+
+- El **`LoadControl`** es `NuvioExoPlayerPerformanceHelper.buildLoadControl(context)` — una llamada, y se
+  lleva el tuning por franjas de RAM, que sí importa en un TV box flojo.
+- **El frame-rate switching está apagado** en upstream, así que no hay argumento de judder que perder.
+- Un `BandwidthMeter` es una línea.
+
+### Beneficio extra: eliminar el traspaso elimina la fuga del filtro parental
+
+El P0 que encontré (`SEC-3` / `A1`) era exactamente el handoff a `Screen.Player`: **no consultaba el
+filtro**, así que un canal adulto ya en vista previa podía abrirse con el control parental activo. Con un
+solo reproductor **ese camino deja de existir**: no hay manera de llegar a un canal sin pasar por la lista
+filtrada.
+
+### Lo que se pierde, dicho con honestidad
+
+El reproductor de upstream además aporta `RenderersFactory` (preferencias de decodificador, conversión
+DV7) y toda su interfaz de pistas y subtítulos. Para canales lineales es un intercambio aceptable. **Si
+más adelante aparece un canal con subtítulos o audio dual que importe**, ése es el momento de reevaluar el
+traspaso — no antes.
 
 ### ⚠️ La trampa a evitar, y es nuestro propio hallazgo P0 (A3)
 
@@ -81,6 +101,9 @@ reintentar. Y **un solo `ExoPlayer` reutilizado** entre canales, no uno nuevo po
 - [ ] `LiveTvViewModel.nextChannel()` / `previousChannel()` sobre la lista filtrada, por `stableKey`, con wrap
 - [ ] Tests: wrap desde el último, canal actual ausente de la lista, lista vacía, y que respeta el filtro
 - [ ] Estado `isFullscreen` + superficie propia reutilizando `createPreviewPlayer`
+- [ ] **Un solo reproductor**: agregarle `NuvioExoPlayerPerformanceHelper.buildLoadControl(context)` y un
+      `BandwidthMeter`. **Quitar el traspaso a `Screen.Player`** para canales de TV
+- [ ] Verificar que **ya no existe** el camino que abría un canal sin consultar el filtro adulto
 - [ ] Manejo de teclas: ARRIBA/ABAJO zappean; **en error NO se consumen**
 - [ ] HUD mínimo: nombre del canal + programa al aire (y el hint de teclas, en palabras)
 - [ ] Verificar en dispositivo: wrap, error con Reintentar pulsable, y que un solo player sobrevive
