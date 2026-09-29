@@ -142,9 +142,9 @@ Alternativa más simple y probablemente suficiente: no pedir foco al re-componer
 (`focusedKey != null`), y confiar en la restauración de foco que Compose ya hace por `key`.
 
 ### Tareas
-- [ ] Reproducir el bug en dispositivo y **confirmar** el diagnóstico (no heredarlo como hecho)
-- [ ] Arreglar con requester por `stableKey` **o** no re-pedir foco si ya hay foco
-- [ ] Verificar: entrar al canal 8, ver, volver → el foco queda en el 8
+- [x] Reproducir el bug en dispositivo y **confirmar** el diagnóstico (no heredarlo como hecho)
+- [x] Arreglar con requester por `stableKey` **o** no re-pedir foco si ya hay foco
+- [x] Verificar: entrar al canal 8, ver, volver → el foco queda en el 8 (verificado: A3S, commit `f238ea172`)
 - [ ] Verificar: tras un refresh (que desmonta la lista) el foco queda donde estaba
 
 ---
