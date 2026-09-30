@@ -5,16 +5,24 @@ package com.nuvio.tv.ext.livetv.ui
 import android.content.Context
 import android.view.TextureView
 import android.view.ViewGroup
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import com.nuvio.tv.ui.theme.NuvioTheme
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.nuvio.tv.ui.screens.player.NuvioExoPlayerPerformanceHelper
@@ -137,34 +145,68 @@ internal fun LiveTvPreviewSurface(
         liveTvPlayer.play(url, headers)
     }
 
-    AndroidView(
-        // Belt and braces with the View flags below: a preview must never take focus, because the remote
-        // is driving the list and a panel that steals it strands the user.
-        modifier = modifier.then(focusHost),
-        factory = { viewContext ->
-            // A TextureView, NOT PlayerView's SurfaceView, and that is the fix.
-            //
-            // A SurfaceView renders in its own layer outside Compose, so neither the rounded clip nor the
-            // layout scaling reaches it: the frame came out anchored top-left and smaller than its
-            // container, black to the right and below, with square corners against a rounded box. A
-            // TextureView is drawn through the normal view hierarchy, so both are respected and the video
-            // is letterboxed centred in its bounds instead of hanging off a corner.
-            //
-            // PlayerView is dropped rather than configured: its controller was already off, and its
-            // SurfaceView was the only thing we used it for.
-            TextureView(viewContext).also { view ->
-                liveTvPlayer.player.setVideoTextureView(view)
+    // Whether the stream being shown has actually drawn something yet.
+    //
+    // A TextureView keeps its last drawn content, and ExoPlayer letterboxes a video that does not fill the
+    // view, so after a channel change the new frame covers only part of the panel and the frame of the
+    // channel before stays visible in the rest: two live pictures in one box. Reported from the device as
+    // a football match with the previous channel's studio around it.
+    //
+    // COVERED, not made transparent. The first attempt hid the view with alpha = 0 until the first frame
+    // and deadlocked: a view Compose does not draw never renders a frame, so the signal never arrived and
+    // the panel stayed invisible forever. Verified on device -- the preview went black.
+    var firstFrameRendered by remember(url) { mutableStateOf(false) }
+    DisposableEffect(liveTvPlayer.player, url) {
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                firstFrameRendered = true
             }
-        },
-        // NO onRelease here, and that asymmetry is the whole point.
-        //
-        // Clearing the player on release fixes the ghost for the surface that is being removed LAST --
-        // but opening the fullscreen disposes THIS view AFTER the new one attached, so clearing here
-        // wiped the surface the fullscreen had just set and the picture went black. Verified on device:
-        // before this detach existed the fullscreen played fine, after it the capture came out 9.7 KB of
-        // black. The fullscreen surface keeps its own onRelease, because the ghost appeared when THAT
-        // one was torn down.
-    )
+        }
+        liveTvPlayer.player.addListener(listener)
+        onDispose { liveTvPlayer.player.removeListener(listener) }
+    }
+
+    Box(modifier = modifier) {
+        AndroidView(
+            // Belt and braces with the View flags below: a preview must never take focus, because the
+            // remote is driving the list and a panel that steals it strands the user.
+            modifier = Modifier.fillMaxSize().then(focusHost),
+            factory = { viewContext ->
+                // A TextureView, NOT PlayerView's SurfaceView, and that is the fix.
+                //
+                // A SurfaceView renders in its own layer outside Compose, so neither the rounded clip nor
+                // the layout scaling reaches it: the frame came out anchored top-left and smaller than its
+                // container, black to the right and below, with square corners against a rounded box. A
+                // TextureView is drawn through the normal view hierarchy, so both are respected and the
+                // video is letterboxed centred in its bounds instead of hanging off a corner.
+                //
+                // PlayerView is dropped rather than configured: its controller was already off, and its
+                // SurfaceView was the only thing we used it for.
+                TextureView(viewContext).also { view ->
+                    liveTvPlayer.player.setVideoTextureView(view)
+                }
+            },
+            // NO onRelease here, and that asymmetry is the whole point.
+            //
+            // Clearing the player on release fixes the ghost for the surface that is being removed LAST --
+            // but opening the fullscreen disposes THIS view AFTER the new one attached, so clearing here
+            // wiped the surface the fullscreen had just set and the picture went black. Verified on device:
+            // before this detach existed the fullscreen played fine, after it the capture came out 9.7 KB of
+            // black. The fullscreen surface keeps its own onRelease, because the ghost appeared when THAT
+            // one was torn down.
+        )
+
+        // The cover, removed once the stream is actually on screen. It also hides the buffering gap: while
+        // the next channel prepares, the panel shows its own background instead of a frozen frame
+        // pretending to be live.
+        if (!firstFrameRendered) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(NuvioTheme.colors.BackgroundElevated)
+            )
+        }
+    }
 }
 
 private fun liveMediaItem(url: String): MediaItem = MediaItem.Builder()
