@@ -99,7 +99,6 @@ fun LiveTvScreen(
     onPreviousChannel: () -> Unit,
     onExitFullscreen: () -> Unit
 ) {
-    var showSettings by remember { mutableStateOf(false) }
     var showGrid by remember { mutableStateOf(false) }
 
     // Live playback is edge to edge, so the app's sidebar rail has to get out of the way. Verified on
@@ -128,7 +127,6 @@ fun LiveTvScreen(
     BackHandler {
         when {
             showGrid -> showGrid = false
-            showSettings -> showSettings = false
             else -> onBack()
         }
     }
@@ -164,13 +162,6 @@ fun LiveTvScreen(
                 onNext = onNextChannel,
                 onExit = onExitFullscreen
             )
-        } else if (showSettings) {
-            LiveTvSettingsPane(
-                state = state,
-                onSetAdultFilter = onSetAdultFilter,
-                onSetEpgSourceEnabled = onSetEpgSourceEnabled,
-                onSetCategoryVisible = onSetCategoryVisible
-            )
         } else if (showGrid) {
             LiveTvGrid(
                 rows = state.channels,
@@ -203,7 +194,6 @@ fun LiveTvScreen(
                 onPlayChannel = onPlayChannel,
                 onChannelFocused = onChannelFocused,
                 onSelectCategory = onSelectCategory,
-                onOpenSettings = { showSettings = true },
                 onOpenGrid = { showGrid = true },
                 onSearchQuery = onSearchQuery
             )
@@ -222,7 +212,6 @@ private fun ChannelList(
     onChannelFocused: (String) -> Unit,
     onSelectCategory: (LiveTvCategoryId) -> Unit,
     onSearchQuery: (String) -> Unit,
-    onOpenSettings: () -> Unit,
     onOpenGrid: () -> Unit
 ) {
     val listState = rememberLazyListState()
@@ -284,9 +273,9 @@ private fun ChannelList(
                 }
             }
     ) {
-        // The settings control sits above the list on purpose: entry focus still lands on the first
-        // channel, and UP from there reaches it. Putting it before the list would have it take the
-        // focus the list is supposed to get.
+        // No settings button here any more: the feature's settings are a category of the app's own
+        // Settings screen, which is where a user looks for settings. Two entries to the same toggles is
+        // the duplication the owner reported -- a "Settings" button next to "Guide" and the rail's gear.
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -315,23 +304,6 @@ private fun ChannelList(
             ) {
                 Text(
                     text = stringResource(R.string.live_tv_view_grid),
-                    modifier = Modifier.padding(horizontal = NuvioTheme.spacing.md),
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            Spacer(modifier = Modifier.width(NuvioTheme.spacing.sm))
-            Button(
-                onClick = onOpenSettings,
-                colors = ButtonDefaults.colors(
-                    containerColor = NuvioTheme.colors.Surface,
-                    focusedContainerColor = NuvioTheme.colors.SecondaryVariant,
-                    contentColor = NuvioTheme.colors.TextPrimary,
-                    focusedContentColor = NuvioTheme.colors.OnSecondaryVariant
-                ),
-                shape = ButtonDefaults.shape(RoundedCornerShape(50))
-            ) {
-                Text(
-                    text = stringResource(R.string.live_tv_settings_open),
                     modifier = Modifier.padding(horizontal = NuvioTheme.spacing.md),
                     fontWeight = FontWeight.Medium
                 )
