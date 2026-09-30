@@ -370,3 +370,77 @@ sea del nuestro. Y `isCurrentMediaItemLive` sólo está disponible **después** 
 no puede decidir un `LoadControl` que se arma en el init.
 
 **Medir**: cuenta de rebuffer y tiempo hasta arrancar.
+
+---
+
+## 📋 PENDIENTE 3 — Buscador de canales (receta investigada, lista para implementar)
+
+El fork **sí** lo tiene. Esto es cómo lo hizo, verificado en `reference/fork/`:
+
+### La barra, y por qué es fácil
+`screens/tvchannels/TvChannelsScreen.kt` usa un **`OutlinedTextField` de `material3`** +
+`LocalSoftwareKeyboardController`. **El teclado en pantalla de Android TV aparece solo** — no hay que
+escribir teclado propio. Eso era lo único que parecía difícil y no lo es.
+
+- `var isEditingSearch by rememberSaveable { mutableStateOf(false) }`
+- `BackHandler(enabled = isEditingSearch)` para **salir del modo edición** sin abandonar la pantalla
+- `LaunchedEffect(isEditingSearch)` para pedir foco / abrir el teclado
+
+### El estado y el filtro
+```kotlin
+var searchQuery by rememberSaveable { mutableStateOf(state.searchQuery) }   // fork:140
+fun setSearchQuery(query: String) { repository.setSearchQuery(query) }      // fork ViewModel:110
+```
+
+Y el filtro del fork, `TvChannelsRepository.kt:511`:
+
+```kotlin
+private fun filterChannels(channels, category, query, hideAdult, favoriteKeys) {
+    val trimmedQuery = query.trim().lowercase()
+    // ... adulto, luego categoria, luego query
+}
+```
+
+**Lo clave**: el filtro **compone** query + categoría + adulto en **una sola función**. Es exactamente el
+invariante que este proyecto protege, y por eso va **dentro de `publish()`** del `LiveTvViewModel`, no en
+la pantalla: así lista, grilla, vista previa y reproducción siguen leyendo el **mismo conjunto filtrado**.
+Si el filtro se hiciera en el composable, la vista previa y el zapping podrían alcanzar un canal que la
+lista ya no muestra — que es la forma exacta del P0 del filtro parental en el fork.
+
+### Piezas que YA tenemos y hay que reutilizar
+- **`EpgChannelNames.normalize`** (`data/epg/EpgChannelNames.kt`): acentos, mayúsculas, puntuación y
+  marcadores de calidad (HD/FHD/4K/1080p). Ya está probado. **Usar esto para el match**, no `.lowercase()`.
+- `LiveTvUiState` → agregar `searchQuery: String`.
+- `LiveTvViewModel.publish()` → es el único punto de filtrado; ahí va.
+- **Estado vacío propio**: "no hay resultados" **no** es "no hay canales" (`RF-50`).
+
+### Búsqueda por voz (opcional, el fork la tiene)
+`SpeechRecognizer.isRecognitionAvailable(context)` + el `RECORD_AUDIO` que upstream ya declara. Es el
+botón de micrófono. **No es requisito para el primer corte.**
+
+### ⚠️ Trampas
+1. **No pelear con el `UP` del slider** — ya nos costó un bug (commit `b818910f8`): el `UP` del slider y el
+   de la lista se disputan el foco. El campo de búsqueda **suma un tercer vecino** en esa fila; hay que
+   decidir el orden de foco completo (encabezado → slider → lista) y **verificarlo en dispositivo**.
+2. **Nada de `LazyRow` dentro del `LazyColumn`** (el patrón que hizo stutterear al fork).
+3. Al buscar, **limpiar el preview** si el canal enfocado deja de estar en la lista (mismo criterio que el
+   cambio de categoría).
+
+### Criterio de cierre
+- [ ] Escribir una letra filtra la lista **y** el contador del encabezado
+- [ ] Combinar con categoría activa y con el filtro adulto (probar los tres juntos)
+- [ ] "Sin resultados" ≠ "sin canales"
+- [ ] Atrás sale del modo edición y **no** abandona la pantalla
+- [ ] Atrás desde el buscador en la **grilla** también
+- [ ] Foco: encabezado → buscador → slider → lista, verificado con `nuvioes/focus-probe.py`
+- [ ] **Instalar y verificar en dispositivo** (confirmar `dumpsys package | grep lastUpdateTime`)
+
+---
+
+## 🔍 ENCONTRADO, NO ARREGLADO — el fullscreen no es edge-to-edge
+
+En la captura del fullscreen verificado (`2026-09-30 09:42`) **el riel lateral de la app sigue visible** a
+la izquierda, con los cinco íconos. O sea que la "pantalla completa" es el área de contenido agrandada,
+no la pantalla entera. Cosmético, pero no es lo que un espectador espera. Probablemente haya que ocultar
+el riel mientras `isFullscreen` — y eso puede tocar `MainActivity`, que **ya es uno de nuestros 5
+enganches**, así que hay que mirar el costo antes.
