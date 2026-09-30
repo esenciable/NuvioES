@@ -149,11 +149,14 @@ internal fun LiveTvPreviewSurface(
                 this.player = liveTvPlayer.player
             }
         },
-        // Same detach as the fullscreen surface, for the same reason: the player is shared and an
-        // ExoPlayer renders into one surface, so a disposed surface that stays attached keeps its last
-        // frame. The preview is the one torn down when the fullscreen opens, which is exactly the
-        // channel that used to appear behind the list afterwards.
-        onRelease = { view -> view.player = null }
+        // NO onRelease here, and that asymmetry is the whole point.
+        //
+        // Clearing the player on release fixes the ghost for the surface that is being removed LAST --
+        // but opening the fullscreen disposes THIS view AFTER the new one attached, so clearing here
+        // wiped the surface the fullscreen had just set and the picture went black. Verified on device:
+        // before this detach existed the fullscreen played fine, after it the capture came out 9.7 KB of
+        // black. The fullscreen surface keeps its own onRelease, because the ghost appeared when THAT
+        // one was torn down.
     )
 }
 
