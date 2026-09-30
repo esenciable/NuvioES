@@ -161,6 +161,19 @@ internal fun LiveTvPreviewSurface(
             override fun onRenderedFirstFrame() {
                 firstFrameRendered = true
             }
+
+            // STATE_READY as well, because a stream with no video track never fires the event above and
+            // the cover would stay up forever on a channel that is playing fine. Verified against the
+            // fork: it flips the same flag on both events, and a catalogue like this one has radio-style
+            // channels where it matters.
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) firstFrameRendered = true
+            }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                // The failure state owns the panel from here; a cover under it would only fight it.
+                firstFrameRendered = true
+            }
         }
         liveTvPlayer.player.addListener(listener)
         onDispose { liveTvPlayer.player.removeListener(listener) }

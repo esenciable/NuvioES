@@ -109,16 +109,35 @@ internal fun LiveTvFullscreenSurface(
     // it is only active while this surface is on screen.
     BackHandler(onBack = onExit)
 
+    // Whether the stream that is on screen has actually drawn something.
+    //
+    // The cover below is the fork's own mechanism, applied to the surface that was missing it. Comparing
+    // the two trees settled it: the fork uses ONE composable with this cover for BOTH the preview and the
+    // fullscreen, while ours had the cover on the preview only -- which is exactly why the preview stopped
+    // ghosting and the fullscreen did not.
+    var firstFrameRendered by remember(request.stream.url) { mutableStateOf(false) }
+
     // One listener for the screen's player. Removed with the composition so a disposed surface never
     // writes into a state nobody is reading.
-    DisposableEffect(liveTvPlayer) {
+    DisposableEffect(liveTvPlayer, request.stream.url) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 playbackError = error
+                // The error overlay owns the screen from here; a cover underneath it would only fight it.
+                firstFrameRendered = true
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState != Player.STATE_IDLE) playbackError = null
+                // STATE_READY as well as the first frame, and this is not belt and braces. A stream with
+                // no video track -- radio-style IPTV, which is common in these catalogues -- never fires
+                // onRenderedFirstFrame, so the cover would stay up forever on a channel that is playing
+                // perfectly. The fork flips the same flag on both events for the same reason.
+                if (playbackState == Player.STATE_READY) firstFrameRendered = true
+            }
+
+            override fun onRenderedFirstFrame() {
+                firstFrameRendered = true
             }
         }
         liveTvPlayer.player.addListener(listener)
@@ -191,6 +210,19 @@ internal fun LiveTvFullscreenSurface(
         // 2026-09-29 21:19.
         onRelease = { view -> view.player = null }
     )
+
+        // The cover, and it is drawn as a SIBLING AFTER the AndroidView.
+        //
+        // That ordering is the whole reason it works: an opaque Compose sibling painted after a
+        // PlayerView does cover its SurfaceView, which is not true of a Modifier.clip and not true of
+        // alpha on the view. The house player already relies on this -- an opaque LoadingOverlay is drawn
+        // over its own PlayerView -- so it is proven on these devices rather than assumed.
+        //
+        // Never alpha on the view itself. That was tried first and deadlocked: a view Compose does not
+        // draw never renders a frame, so the signal that lifts the cover never arrives.
+        if (!firstFrameRendered) {
+            Box(modifier = Modifier.matchParentSize().background(Color.Black))
+        }
 
         if (hudVisible) {
             FullscreenHud(
