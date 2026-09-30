@@ -157,7 +157,7 @@ class AddonStreamResolverTest {
         id = id,
         addonBaseUrl = "https://addon.test/token",
         addonName = "Esencial Play",
-        catalogId = "vivo",
+        catalogIds = setOf("vivo"),
         catalogName = "En vivo",
         apiType = apiType,
         name = "Canal $id",

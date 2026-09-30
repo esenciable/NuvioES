@@ -103,6 +103,24 @@ class CatalogChannelLoaderTest {
         assertEquals(1, result.channels.size)
     }
 
+    @Test
+    fun `a channel published by two catalogs belongs to both, and is still one channel`() = runTest {
+        // The bug this pins, reported from the device with a screenshot: with `TV · todo` fetched
+        // first, every channel carried that catalog's id and the specific categories -- TV · Deportes,
+        // Panama and the rest -- matched nothing at all, so the list said "0 channels" while the
+        // categories were plainly full. Deduplication kept the first catalog and threw away the rest.
+        val repository = FakeCatalogRepository { catalogId, _ -> page(catalogId, items("c1").toList()) }
+
+        val result = loader(repository).load(listOf(catalog("vivo"), catalog("deportes")))
+
+        assertEquals("still one channel", 1, result.channels.size)
+        assertEquals(
+            "but it belongs to both catalogs",
+            setOf("vivo", "deportes"),
+            result.channels.single().catalogIds
+        )
+    }
+
     private fun loader(repository: FakeCatalogRepository) =
         CatalogChannelLoader(catalogRepository = repository)
 

@@ -39,7 +39,7 @@ data class LiveTvCategory(
         LiveTvCategoryId.All -> true
         LiveTvCategoryId.Favorites -> isFavorite(channel)
         is LiveTvCategoryId.Addon ->
-            channel.addonBaseUrl == id.addonBaseUrl && channel.catalogId == id.catalogId
+            channel.addonBaseUrl == id.addonBaseUrl && id.catalogId in channel.catalogIds
     }
 }
 

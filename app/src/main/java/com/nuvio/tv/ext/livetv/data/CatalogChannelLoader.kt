@@ -63,7 +63,15 @@ class CatalogChannelLoader(
                         catalogName = catalog.catalogName,
                         apiType = catalog.apiType
                     )
-                    channels.putIfAbsent(channel.stableKey, channel)
+                    // A channel belongs to EVERY catalog that published it. `putIfAbsent` alone kept
+                    // only the first, which emptied every specific category as soon as the addon's
+                    // "all" catalog was fetched first.
+                    val existing = channels[channel.stableKey]
+                    channels[channel.stableKey] = if (existing == null) {
+                        channel
+                    } else {
+                        existing.copy(catalogIds = existing.catalogIds + channel.catalogIds)
+                    }
                 }
 
                 if (!catalog.supportsSkip) break

@@ -148,7 +148,12 @@ internal fun LiveTvPreviewSurface(
                 descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 this.player = liveTvPlayer.player
             }
-        }
+        },
+        // Same detach as the fullscreen surface, for the same reason: the player is shared and an
+        // ExoPlayer renders into one surface, so a disposed surface that stays attached keeps its last
+        // frame. The preview is the one torn down when the fullscreen opens, which is exactly the
+        // channel that used to appear behind the list afterwards.
+        onRelease = { view -> view.player = null }
     )
 }
 

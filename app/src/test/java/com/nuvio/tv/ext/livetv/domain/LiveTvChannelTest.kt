@@ -123,7 +123,7 @@ class LiveTvChannelTest {
         id = id,
         addonBaseUrl = addonBaseUrl,
         addonName = "Addon",
-        catalogId = catalogId,
+        catalogIds = setOf(catalogId),
         catalogName = "Vivo",
         apiType = "tv",
         name = "Canal $id",

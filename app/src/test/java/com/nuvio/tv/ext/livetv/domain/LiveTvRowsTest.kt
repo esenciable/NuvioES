@@ -267,7 +267,7 @@ class LiveTvRowsTest {
         id = id,
         addonBaseUrl = ADDON,
         addonName = "Addon",
-        catalogId = "vivo",
+        catalogIds = setOf("vivo"),
         catalogName = "En vivo",
         apiType = "tv",
         name = name,

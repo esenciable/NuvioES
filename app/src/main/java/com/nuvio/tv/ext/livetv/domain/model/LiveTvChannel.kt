@@ -14,7 +14,19 @@ data class LiveTvChannel(
     val id: String,
     val addonBaseUrl: String,
     val addonName: String,
-    val catalogId: String,
+    /**
+     * EVERY catalog of this addon that publishes this channel, not just the first one seen.
+     *
+     * This is a set because that is what is true: the addon publishes overlapping catalogs, and a
+     * channel that `TV · todo` and `TV · Deportes` both list belongs to both. Keeping only the first
+     * one made every specific category come up empty -- with the "all" catalog fetched first, every
+     * channel carried its id and `TV · Deportes` matched nothing. Reported from the device with
+     * screenshots: the categories existed and the list said "0 channels".
+     */
+    val catalogIds: Set<String>,
+    /**
+     * The catalog this channel was first seen in. Display only -- membership is [catalogIds].
+     */
     val catalogName: String,
     /**
      * The catalog's declared type, which is what the addon expects in `/stream/{type}/{id}.json`.
@@ -28,6 +40,12 @@ data class LiveTvChannel(
     val description: String?,
     val genres: List<String>
 ) {
+    /**
+     * Deduplication key: one entry per channel per addon.
+     *
+     * Deliberately NOT including the catalog. The same channel listed by three catalogs is one
+     * channel, and duplicating it would make the list -- and the count -- wrong.
+     */
     val stableKey: String get() = liveTvChannelKey(addonBaseUrl, id)
 }
 
@@ -53,7 +71,7 @@ fun MetaPreview.toLiveTvChannel(
     id = id,
     addonBaseUrl = addonBaseUrl,
     addonName = addonName,
-    catalogId = catalogId,
+    catalogIds = setOf(catalogId),
     catalogName = catalogName,
     apiType = apiType,
     name = name,

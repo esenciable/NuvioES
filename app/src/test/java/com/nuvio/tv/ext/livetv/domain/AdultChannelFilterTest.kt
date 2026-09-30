@@ -118,7 +118,7 @@ class AdultChannelFilterTest {
         id = "c1",
         addonBaseUrl = "https://addon.test/token",
         addonName = "Addon",
-        catalogId = "vivo",
+        catalogIds = setOf("vivo"),
         catalogName = catalogName,
         apiType = "tv",
         name = name,

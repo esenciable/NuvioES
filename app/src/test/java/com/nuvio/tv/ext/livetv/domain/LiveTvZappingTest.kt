@@ -103,7 +103,7 @@ class LiveTvZappingTest {
         id = id,
         addonBaseUrl = addon,
         addonName = "Addon",
-        catalogId = "vivo",
+        catalogIds = setOf("vivo"),
         catalogName = "En vivo",
         apiType = "tv",
         name = "Canal $id",

@@ -143,20 +143,28 @@ internal fun LiveTvFullscreenSurface(
                 }
             }
     ) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { viewContext ->
-                PlayerView(viewContext).apply {
-                    // No controller: UP/DOWN zapping is the whole interaction, and the controller would
-                    // consume the very directions we need. The HUD is the interface instead.
-                    useController = false
-                    isFocusable = false
-                    isFocusableInTouchMode = false
-                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-                    this.player = liveTvPlayer.player
-                }
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { viewContext ->
+            PlayerView(viewContext).apply {
+                // No controller: UP/DOWN zapping is the whole interaction, and the controller would
+                // consume the very directions we need. The HUD is the interface instead.
+                useController = false
+                isFocusable = false
+                isFocusableInTouchMode = false
+                descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                this.player = liveTvPlayer.player
             }
-        )
+        },
+        // DETACH ON DISPOSE, or the surface keeps the last frame it rendered.
+        //
+        // The player is shared with the preview on purpose, but an ExoPlayer renders into ONE surface,
+        // so the surface that no longer receives frames holds its last buffer frozen. Leaving the
+        // fullscreen therefore drew the old channel UNDER the list -- two stacked videos -- because the
+        // destroyed PlayerView was still attached to the player. Verified on device, screenshot at
+        // 2026-09-29 21:19.
+        onRelease = { view -> view.player = null }
+    )
 
         FullscreenHud(
             channelName = request.channel.name,
