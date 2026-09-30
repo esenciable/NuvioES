@@ -79,7 +79,16 @@ internal fun LiveTvCategorySlider(
      * why the search field one row above was unreachable: the chips had no UP at all, so the focus
      * search found nothing and stayed put.
      */
-    upTarget: FocusRequester? = null
+    upTarget: FocusRequester? = null,
+    /**
+     * Called when a chip takes focus.
+     *
+     * The chip reports its own focus because nothing outside can ask: `FilterChip` keeps its focus node
+     * to itself, which is exactly why focusProperties applied from the outside did nothing. Upstream's
+     * search solves its version of this by observing keys at a ROOT container, so this exists to give
+     * that container something to consult.
+     */
+    onChipFocused: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
 
@@ -115,6 +124,7 @@ internal fun LiveTvCategorySlider(
                 onClick = { onSelectCategory(category.id) },
                 modifier = Modifier
                     .focusRequester(requester)
+                    .onFocusChanged { if (it.isFocused) onChipFocused() }
             )
         }
     }

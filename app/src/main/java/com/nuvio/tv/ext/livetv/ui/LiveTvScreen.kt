@@ -37,6 +37,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextFieldDefaults
@@ -217,6 +222,8 @@ private fun ChannelList(
     // UP from a category chip lands here. Without it the search field was rendered but unreachable,
     // because the chips had no UP and focus search had nowhere to go.
     val searchRequester = remember { FocusRequester() }
+    // Whether the category slider is the thing that holds focus right now.
+    var chipFocused by remember { mutableStateOf(false) }
     var focusedKey by remember { mutableStateOf<String?>(null) }
 
     // Focus goes back to WHERE THE USER WAS, not to the top.
@@ -236,7 +243,24 @@ private fun ChannelList(
         runCatching { requesters[target]?.requestFocus() }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(NuvioTheme.spacing.xl)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(NuvioTheme.spacing.xl)
+            // UP is handled at the CONTAINER, the way upstream's search does it, because nothing applied
+            // to the chips themselves reaches their focus node -- FilterChip owns it. A root preview sees
+            // every key before any child can consume it, so this does not depend on FilterChip's internals.
+            .onPreviewKeyEvent { event ->
+                val isUp = event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp
+                if (!isUp || !chipFocused) {
+                    false
+                } else {
+                    // Consume only if focus actually moved; swallowing the key after a failed request
+                    // traps the D-pad, which is the shape of the fork's unpressable buttons.
+                    runCatching { searchRequester.requestFocus() }.isSuccess
+                }
+            }
+    ) {
         // The settings control sits above the list on purpose: entry focus still lands on the first
         // channel, and UP from there reaches it. Putting it before the list would have it take the
         // focus the list is supposed to get.
@@ -341,7 +365,8 @@ private fun ChannelList(
             selectedCategory = state.selectedCategory,
             onSelectCategory = onSelectCategory,
             requesters = categoryRequesters,
-            upTarget = searchRequester
+            upTarget = searchRequester,
+            onChipFocused = { chipFocused = true }
         )
 
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
@@ -372,6 +397,7 @@ private fun ChannelList(
                                 resolving = state.resolvingChannelKey == row.channel.stableKey,
                                 onClick = { onPlayChannel(row.channel.stableKey) },
                                 onFocused = {
+                                    chipFocused = false
                                     focusedKey = row.channel.stableKey
                                     onRememberKey(row.channel.stableKey)
                                     onChannelFocused(row.channel.stableKey)
