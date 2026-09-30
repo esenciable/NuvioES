@@ -194,8 +194,11 @@ presupuesto**, así que se aprueba o no se hace.
       mismo panel sobre el mismo store, así que no pueden divergir, y el usuario está en TV en vivo
       cuando quiere ajustes de TV en vivo
 - [ ] Verificar en dispositivo: Ajustes → TV en vivo → el panel, con foco correcto y Atrás que vuelve
-      (**bloqueada**: el addon del dueño devuelve 502/timeout en todos los catálogos, así que no hay
-      categorías que listar; reverificar cuando vuelva)
+. **Verificado en dispositivo** (commit `67152a924`): el raíl de Ajustes muestra "Live TV", el panel
+      renderiza con el título "Live TV settings", el grupo Parental y "Categories in the slider" con las
+      categorías del addon (TV · Todo, TV · Deportes, TV · Cine y Series), **el foco cae en el primer
+      control** (el riesgo que quedaba abierto), y Atrás devuelve el foco al ítem del raíl dejando el panel
+      visible
 - [x] Actualizar la tabla de enganches y el conteo en `NUVIO-ES.md` cuando esté hecho (medido: **18 líneas,
       51/60, 5 archivos**; el margen que queda es de 9 líneas)
 
@@ -250,7 +253,12 @@ y **elegir en ajustes qué categorías aparecen en ese slider**.
 - [x] `hiddenCategoryIds` en `LiveTvStore` + grupo en el panel de ajustes (sin permitir ocultar `Todos`/`Favoritos`)
 - [x] Tests puros: `visibleCategoriesFor` (5 tests; 132 en total, 0 fallos) + `All`/`Favorites` no se ocultan
 - [x] Limpiar el preview cuando el canal sale de la categoría (`clearPreviewIfChannelLeftCategory`)
-- [ ] Verificar en dispositivo: cambiar categoría, el contador, el foco, y que el preview no quede colgado
+- [x] Verificar en dispositivo: cambiar categoría, el contador, el foco, y que el preview no quede colgado.
+      **Verificado**: "TV · Todo" cambia el contador 1199 → 937 y filtra la lista; "Favorites" (0 canales)
+      limpia el preview ("Move around to see a channel's details"), no deja el canal muerto del fork.
+      **Bug encontrado y arreglado en el camino** (`b818910f8`): el `focusRestorer` del slider peleaba
+      contra el `up = activeCategoryRequester` de la primera fila, así que ARRIBA desde la fila 1 caía en
+      "TV · Más popular" en vez del chip activo. Quitado el restorer; ahora cae en "All"
 
 ---
 
