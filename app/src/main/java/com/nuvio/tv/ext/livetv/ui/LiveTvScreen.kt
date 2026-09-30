@@ -757,49 +757,52 @@ private fun ChannelSearchField(
         }
     }
 
-    if (isEditing) {
-        OutlinedTextField(
-            value = text,
-            onValueChange = { updated ->
-                text = updated
-                onQueryChange(updated)
-            },
-            singleLine = true,
-            placeholder = { Text(stringResource(R.string.live_tv_search_hint)) },
-            keyboardOptions = KeyboardOptions(
-                imeAction = androidx.compose.ui.text.input.ImeAction.Search
-            ),
-            modifier = Modifier
-                .width(SEARCH_FIELD_WIDTH)
-                .focusRequester(fieldFocus)
-                .onFocusChanged { focus ->
-                    if (!focus.isFocused && isEditing) {
-                        isEditing = false
-                        keyboardController?.hide()
-                    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { updated ->
+            text = updated
+            onQueryChange(updated)
+        },
+        // ONE field, always composed, with readOnly as the switch, and that replaces a two-state design
+        // that could not work.
+        //
+        // The old version swapped a clickable Box for this field when the user pressed OK. Swapping
+        // DESTROYS the focused node, so Compose hands focus to the nearest focusable -- the category chip
+        // -- and the field's retries never win that race. The log proved it: requestFocus succeeded, and
+        // one frame later the chip had focus again and the keyboard never opened.
+        //
+        // readOnly gets both halves: the node is never destroyed, so focus cannot be orphaned, and a
+        // read-only field does not summon the IME, so passing through the header with the D-pad stays
+        // quiet. Pressing OK flips it and the keyboard comes up.
+        //
+        // Upstream's search always composes its field for the same reason; the swap was my addition.
+        readOnly = !isEditing,
+        singleLine = true,
+        placeholder = { Text(stringResource(R.string.live_tv_search_hint)) },
+        keyboardOptions = KeyboardOptions(
+            imeAction = androidx.compose.ui.text.input.ImeAction.Search
+        ),
+        modifier = Modifier
+            .width(SEARCH_FIELD_WIDTH)
+            .focusRequester(focusRequester)
+            .onFocusChanged { focus ->
+                if (!focus.isFocused && isEditing) {
+                    isEditing = false
+                    keyboardController?.hide()
                 }
-        )
-    } else {
-        Box(
-            modifier = Modifier
-                .width(SEARCH_FIELD_WIDTH)
-                .height(SEARCH_FIELD_HEIGHT)
-                .clip(RoundedCornerShape(50))
-                .background(NuvioTheme.colors.BackgroundElevated)
-                .focusRequester(focusRequester)
-                .clickable { isEditing = true }
-                .padding(horizontal = NuvioTheme.spacing.md),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            Text(
-                text = if (text.isBlank()) stringResource(R.string.live_tv_search_hint) else text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = NuvioTheme.colors.TextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
+            }
+            .onPreviewKeyEvent { event ->
+                val isConfirm = event.type == KeyEventType.KeyDown &&
+                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                if (!isEditing && isConfirm) {
+                    isEditing = true
+                    true
+                } else {
+                    false
+                }
+            }
+    )
+
 }
 
 private val SEARCH_FIELD_WIDTH = 260.dp
