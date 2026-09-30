@@ -3,6 +3,7 @@
 package com.nuvio.tv.ext.livetv.ui
 
 import android.content.Context
+import android.view.TextureView
 import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -16,7 +17,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.ui.PlayerView
 import com.nuvio.tv.ui.screens.player.NuvioExoPlayerPerformanceHelper
 import com.nuvio.tv.ui.screens.player.PlayerPlaybackNetworking
 
@@ -140,13 +140,18 @@ internal fun LiveTvPreviewSurface(
         // is driving the list and a panel that steals it strands the user.
         modifier = modifier.then(focusHost),
         factory = { viewContext ->
-            PlayerView(viewContext).apply {
-                useController = false
-                isFocusable = false
-                isFocusableInTouchMode = false
-                // The SurfaceView inside would otherwise be able to take focus on its own.
-                descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-                this.player = liveTvPlayer.player
+            // A TextureView, NOT PlayerView's SurfaceView, and that is the fix.
+            //
+            // A SurfaceView renders in its own layer outside Compose, so neither the rounded clip nor the
+            // layout scaling reaches it: the frame came out anchored top-left and smaller than its
+            // container, black to the right and below, with square corners against a rounded box. A
+            // TextureView is drawn through the normal view hierarchy, so both are respected and the video
+            // is letterboxed centred in its bounds instead of hanging off a corner.
+            //
+            // PlayerView is dropped rather than configured: its controller was already off, and its
+            // SurfaceView was the only thing we used it for.
+            TextureView(viewContext).also { view ->
+                liveTvPlayer.player.setVideoTextureView(view)
             }
         },
         // NO onRelease here, and that asymmetry is the whole point.
