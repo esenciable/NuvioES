@@ -141,8 +141,23 @@ fun LiveTvScreen(
             val playingRow = state.channels.firstOrNull {
                 it.channel.stableKey == request.channel.stableKey
             }
+            // A player of its own, and this closes the third surface bug in a row.
+            //
+            // Sharing one ExoPlayer between the preview and the fullscreen gave us a black screen, then a
+            // ghost frame under the list, and now video that does not fill the screen. All three are the
+            // same fact: an ExoPlayer renders into ONE surface, and reassigning it between two views
+            // leaves the old geometry behind. A dedicated player means the fullscreen surface is the only
+            // one its player ever had, so there is nothing to reassign.
+            //
+            // It costs nothing in decoders: the screen composes the list or the fullscreen, never both,
+            // so only one of the two players is alive at any moment.
+            val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+            val fullscreenPlayer = remember { LiveTvPlayer(appContext) }
+            DisposableEffect(fullscreenPlayer) {
+                onDispose { fullscreenPlayer.release() }
+            }
             LiveTvFullscreenSurface(
-                liveTvPlayer = liveTvPlayer,
+                liveTvPlayer = fullscreenPlayer,
                 request = request,
                 programmeTitle = playingRow?.now?.title,
                 onPrevious = onPreviousChannel,
