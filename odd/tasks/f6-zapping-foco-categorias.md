@@ -291,3 +291,82 @@ y **elegir en ajustes qué categorías aparecen en ese slider**.
 2. **Tarea 1 (zapping).** El valor más alto y cero presupuesto.
 3. **Tarea 4 (slider)**, que también depende del foco.
 4. **Tarea 3 (ajustes en su sitio)** al final: **ya está aprobada**, y el guardarraíl la admite.
+
+---
+
+# Feedback del dueño — 2026-09-30 (4 puntos)
+
+## ✅ Ya hecho: fantasma de video apilado (2 bugs de dispositivo)
+
+**Síntoma**: al salir del fullscreen quedaba el canal anterior **debajo de la lista** — dos cuadros de
+video a la vez (captura `2026-09-29 21:19`). Y el HUD funcionaba bien.
+
+**Causa**: el `ExoPlayer` **se comparte a propósito** entre el panel de vista previa y el fullscreen,
+pero **un `ExoPlayer` renderiza a UNA superficie**. Ninguna de las dos `AndroidView` hacía `onRelease`,
+así que los `PlayerView` destruidos **seguían atados al player** y conservaban su último frame.
+
+**Arreglo**: `onRelease = { it.player = null }` en `LiveTvFullscreenSurface.kt` **y** en
+`LiveTvPreviewSurface.kt`. Commit en `135a19ed8`.
+
+## ✅ Ya hecho: categorías llenas que mostraban "0 channels"
+
+**Síntoma**: `TV · Deportes`, `TV · Panama` y otras daban 0 canales **con la lista llena** (captura
+`2026-09-30 08:53`). El slider las mostraba bien.
+
+**Causa raíz**: la clave de dedupe es `(addonBaseUrl, id)` — **correcto**, un canal es un canal — pero el
+canal guardaba **solo el PRIMER catálogo** donde apareció, y la pertenencia a categoría se compara contra
+eso. Como `TV · Todo` trae todo y se pide primero, **todos los canales quedaron con ese `catalogId`** y
+ninguna categoría específica matcheaba nada.
+
+**Arreglo**: el canal ahora lleva **`catalogIds: Set<String>`** — pertenece a **todos** los catálogos que
+lo publicaron. El dedupe no cambió. **Test de regresión que fija las dos mitades**: un canal, en dos
+catálogos. Commit en `135a19ed8`.
+
+⚠️ **Falta verificar en dispositivo los dos arreglos.**
+
+---
+
+## 📋 Pendiente 1 — Buscador de canales
+
+No existe. Requisitos:
+
+- Campo de búsqueda **en la lista** (y probablemente también en la grilla).
+- **Con teclado en pantalla para el control remoto** — es TV, no hay teclado físico. Upstream ya tiene un
+  buscador con teclado (`SearchScreen.kt`); **revisar si es reutilizable** antes de escribir uno.
+- Filtra sobre los canales **ya filtrados** (respetando categoría y filtro adulto), por **nombre
+  normalizado** — hay un normalizador probado en `data/epg/EpgChannelNames.kt` (acentos, mayúsculas,
+  marcadores de calidad) que sirve para esto.
+- Estado vacío propio: "no hay resultados" **no** es "no hay canales".
+- El foco al entrar al buscador, y vuelta a la lista al cerrarlo. **Y ojo**: no debe pelear con el `UP`
+  del slider (ver `b818910f8`).
+
+## 📋 Pendiente 2 — Buffer del vivo: piso profundo (CORREGIDO)
+
+**Medido por el dueño, misma máquina, misma red, mismas fuentes: el fork reproduce el vivo bien y el
+upstream se frisa.**
+
+| Árbol | `MIN` | `MAX` |
+| --- | --- | --- |
+| Pin `1.1.0-beta.2` (= `upstream-dev`) | **15 000** | 45 000 |
+| Fork de referencia | **40 000** | 120 000 |
+
+El fork **subió el buffer a propósito**. `minBufferMs` es *"lo que el player intenta mantener
+buffereado"*: con 15 s un segmento lento lo vacía y rebufferea; con 40 s hay holgura.
+
+**Esto corrige el PRD, que recomendaba lo contrario** (§8.5, y `RF-27`/`RF-28` ya reescritos).
+
+**Decisión**: el vivo lleva **su propio piso, profundo (~30-40 s)**, con el motivo escrito en el código.
+El offset queda más lejos del borde: **ése es el precio.**
+
+**Dónde**: `buildLoadControl` **lee variables mutables del módulo** (`minBufferMs`/`maxBufferMs`), así que
+**no se puede parametrizar sin tocar ese archivo**. El camino sin conflicto es construir el `LoadControl`
+del vivo en **nuestro** archivo — el call site hoy es `ext/livetv/ui/LiveTvPreviewSurface.kt:56`.
+Alternativa limpia: **PR a upstream con un parámetro `live`**.
+
+**Detección — la trampa**: **NO por URL**. `LivePlaybackUiPolicy` documenta que vivo y VOD usan HLS por
+igual; `FrameRateUtils.isLiveStreamUrl()` sólo conoce `.mpd`/`.ism` y **alimenta frame-rate y Dolby
+Vision, así que no hay que ensancharla**. La señal sale del camino que **ya sabe** que abre un canal — o
+sea del nuestro. Y `isCurrentMediaItemLive` sólo está disponible **después** de preparar el item, así que
+no puede decidir un `LoadControl` que se arma en el init.
+
+**Medir**: cuenta de rebuffer y tiempo hasta arrancar.
