@@ -43,4 +43,7 @@
     <string name="live_tv_view_grid">Guía</string>
     <string name="live_tv_fullscreen_hint">Arriba / Abajo: cambiar de canal · Atrás: salir</string>
     <string name="live_tv_fullscreen_error">No se pudo reproducir este canal</string>
+
+    <string name="live_tv_search_hint">Buscar canales</string>
+    <string name="live_tv_search_no_results">Ningún canal coincide con la búsqueda</string>
 </resources>

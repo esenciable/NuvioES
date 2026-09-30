@@ -49,6 +49,7 @@ fun LiveTvRoute(navController: NavController) {
         onPlayChannel = viewModel::playChannel,
         onChannelFocused = viewModel::onChannelFocused,
         onSetAdultFilter = viewModel::setAdultFilter,
+        onSearchQuery = viewModel::setSearchQuery,
         onSetEpgSourceEnabled = viewModel::setEpgSourceEnabled,
         onSetCategoryVisible = viewModel::setCategoryVisible,
         onSelectCategory = viewModel::selectCategory,

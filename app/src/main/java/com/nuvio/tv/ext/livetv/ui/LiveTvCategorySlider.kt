@@ -18,6 +18,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
@@ -67,13 +73,36 @@ internal fun LiveTvCategorySlider(
     selectedCategory: LiveTvCategoryId,
     onSelectCategory: (LiveTvCategoryId) -> Unit,
     requesters: MutableMap<String, FocusRequester>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Where UP goes from a chip. Null leaves the key to the system, which is what happened before and
+     * why the search field one row above was unreachable: the chips had no UP at all, so the focus
+     * search found nothing and stayed put.
+     */
+    upTarget: FocusRequester? = null
 ) {
     val scrollState = rememberScrollState()
 
     Row(
         modifier = modifier
             .fillMaxWidth()
+            // UP is handled by the SLIDER, not by each chip. The chip is a FilterChip, which builds its
+            // own focus node and its own key handling internally; an ancestor preview sees the key first
+            // and cannot be pre-empted by that. Per-chip handlers did nothing, which is how the search
+            // field ended up rendered but unreachable.
+            .onPreviewKeyEvent { event ->
+                if (upTarget == null ||
+                    event.type != KeyEventType.KeyDown ||
+                    event.key != Key.DirectionUp
+                ) {
+                    false
+                } else {
+                    // Consume only if focus actually moved: swallowing the key after a failed request
+                    // traps the D-pad on one element, the same shape as the reference fork's buttons
+                    // that could not be pressed. Returning false lets the system's search try.
+                    runCatching { upTarget.requestFocus() }.isSuccess
+                }
+            }
             .horizontalScroll(scrollState),
         horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically
@@ -84,7 +113,8 @@ internal fun LiveTvCategorySlider(
                 label = categoryLabel(category),
                 selected = category.id == selectedCategory,
                 onClick = { onSelectCategory(category.id) },
-                modifier = Modifier.focusRequester(requester)
+                modifier = Modifier
+                    .focusRequester(requester)
             )
         }
     }

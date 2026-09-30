@@ -70,6 +70,14 @@ data class LiveTvUiState(
     val categories: List<LiveTvCategory> = emptyList(),
     val selectedCategory: LiveTvCategoryId = LiveTvCategoryId.All,
     /**
+     * What the user typed in the channel search.
+     *
+     * Lives in the state, and not only in the composable, because the filter runs in one place -- see
+     * the ViewModel's publish(). Keeping it here is what stops the list, the grid, the preview and the
+     * zapping from disagreeing about which channels exist.
+     */
+    val searchQuery: String = "",
+    /**
      * The slider categories the user removed, by preference key.
      *
      * Carried in state because the slider filters [categories] with it; the settings pane keeps

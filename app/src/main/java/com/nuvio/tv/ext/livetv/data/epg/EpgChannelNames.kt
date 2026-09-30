@@ -29,4 +29,22 @@ object EpgChannelNames {
             .filter { it.isNotEmpty() && it !in QUALITY_MARKERS }
             .joinToString(separator = "")
     }
+
+    /**
+     * The words of a name, normalised, **kept apart**.
+     *
+     * Concatenating is right for equality -- `"canal13"` is `"canal13"` -- and wrong for search: the
+     * query `"a&e"` normalises to `"ae"`, which is a substring of `"nbaeventos"`. Keeping the words
+     * separate is what stops a search from matching across two unrelated words, and a test caught exactly
+     * that false positive.
+     *
+     * Quality markers are dropped here too, so `"canal 13"` finds `"Canal 13 FHD"`.
+     */
+    fun searchTokens(raw: String): List<String> {
+        val lowered = raw.trim().lowercase()
+        val withoutAccents = Normalizer.normalize(lowered, Normalizer.Form.NFD).replace(DIACRITICS, "")
+        return withoutAccents
+            .split(SEPARATORS)
+            .filter { it.isNotEmpty() && it !in QUALITY_MARKERS }
+    }
 }

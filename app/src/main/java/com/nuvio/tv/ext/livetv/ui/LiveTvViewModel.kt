@@ -33,6 +33,7 @@ import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
 import com.nuvio.tv.ext.livetv.domain.model.canBeHidden
 import com.nuvio.tv.ext.livetv.domain.model.inCategory
+import com.nuvio.tv.ext.livetv.domain.matching
 import com.nuvio.tv.ext.livetv.domain.model.preferenceKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
@@ -98,6 +99,7 @@ class LiveTvViewModel @Inject constructor(
     /** What every consumer sees: list, preview and playback all read this one, already filtered. */
     private var channels: List<LiveTvChannel> = emptyList()
     private var hideAdultChannels: Boolean = true
+    private var searchQuery: String = ""
     private var guide: EpgSnapshot = EpgSnapshot.EMPTY
     private var epgSources: List<EpgSource> = emptyList()
     private var disabledEpgSourceIds: Set<String> = emptySet()
@@ -379,6 +381,12 @@ class LiveTvViewModel @Inject constructor(
      * default. The settings screen explains what they are and turns them on one at a time; the addon's
      * own guide needs no such consent.
      */
+    fun setSearchQuery(query: String) {
+        if (query == searchQuery) return
+        searchQuery = query
+        publishIfSettled()
+    }
+
     fun selectCategory(categoryId: LiveTvCategoryId) {
         selectedCategory = categoryId
         publish(status = _state.value.status, message = _state.value.errorMessage)
@@ -448,10 +456,17 @@ class LiveTvViewModel @Inject constructor(
         failedCatalogs: Int = 0
     ) {
         val aliases = emptyMap<String, String>()
-        val visibleChannels = channels.inCategory(
-            category = LiveTvCategory(selectedCategory),
-            isFavorite = { it.stableKey in favorites }
-        )
+        // Category and search both run HERE, in the single place the visible channel set is decided.
+        //
+        // Filtering in the composable instead would let the preview and the zapping reach a channel the
+        // list no longer shows -- that is the exact shape of the reference fork's parental-filter leak,
+        // and the same reason the adult filter lives here too.
+        val visibleChannels = channels
+            .inCategory(
+                category = LiveTvCategory(selectedCategory),
+                isFavorite = { it.stableKey in favorites }
+            )
+            .matching(searchQuery)
         val rows: List<LiveTvChannelRow> = LiveTvRows.build(
             channels = visibleChannels,
             guide = guide,
@@ -467,6 +482,7 @@ class LiveTvViewModel @Inject constructor(
                 channels = rows,
                 categories = categories,
                 selectedCategory = selectedCategory,
+                searchQuery = searchQuery,
                 hiddenCategoryIds = hiddenCategoryIds,
                 totalChannelCount = channels.size,
                 guideProgrammeCount = guide.guide.totalProgramsParsed,

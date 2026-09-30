@@ -37,6 +37,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -82,6 +86,7 @@ fun LiveTvScreen(
     onPlayChannel: (String) -> Unit,
     onChannelFocused: (String) -> Unit,
     onSetAdultFilter: (Boolean) -> Unit,
+    onSearchQuery: (String) -> Unit,
     onSetEpgSourceEnabled: (String, Boolean) -> Unit,
     onSetCategoryVisible: (LiveTvCategoryId, Boolean) -> Unit,
     onSelectCategory: (LiveTvCategoryId) -> Unit,
@@ -179,7 +184,8 @@ fun LiveTvScreen(
                 onChannelFocused = onChannelFocused,
                 onSelectCategory = onSelectCategory,
                 onOpenSettings = { showSettings = true },
-                onOpenGrid = { showGrid = true }
+                onOpenGrid = { showGrid = true },
+                onSearchQuery = onSearchQuery
             )
         }
         }
@@ -195,6 +201,7 @@ private fun ChannelList(
     onPlayChannel: (String) -> Unit,
     onChannelFocused: (String) -> Unit,
     onSelectCategory: (LiveTvCategoryId) -> Unit,
+    onSearchQuery: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenGrid: () -> Unit
 ) {
@@ -207,6 +214,9 @@ private fun ChannelList(
         FocusRequester()
     }
     val firstKey = state.channels.firstOrNull()?.channel?.stableKey
+    // UP from a category chip lands here. Without it the search field was rendered but unreachable,
+    // because the chips had no UP and focus search had nowhere to go.
+    val searchRequester = remember { FocusRequester() }
     var focusedKey by remember { mutableStateOf<String?>(null) }
 
     // Focus goes back to WHERE THE USER WAS, not to the top.
@@ -240,6 +250,12 @@ private fun ChannelList(
                 color = NuvioTheme.colors.TextSecondary,
                 modifier = Modifier.weight(1f)
             )
+            ChannelSearchField(
+                query = state.searchQuery,
+                onQueryChange = onSearchQuery,
+                focusRequester = searchRequester
+            )
+            Spacer(modifier = Modifier.width(NuvioTheme.spacing.sm))
             Button(
                 onClick = onOpenGrid,
                 colors = ButtonDefaults.colors(
@@ -324,36 +340,52 @@ private fun ChannelList(
             categories = LiveTvRows.visibleCategoriesFor(state.categories, state.hiddenCategoryIds),
             selectedCategory = state.selectedCategory,
             onSelectCategory = onSelectCategory,
-            requesters = categoryRequesters
+            requesters = categoryRequesters,
+            upTarget = searchRequester
         )
 
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
 
         Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs)
-            ) {
-                items(items = state.channels, key = { it.channel.stableKey }) { row ->
-                    val requester = requesters.getOrPut(row.channel.stableKey) { FocusRequester() }
-                    ChannelRow(
-                        row = row,
-                        resolving = state.resolvingChannelKey == row.channel.stableKey,
-                        onClick = { onPlayChannel(row.channel.stableKey) },
-                        onFocused = {
-                            focusedKey = row.channel.stableKey
-                            onRememberKey(row.channel.stableKey)
-                            onChannelFocused(row.channel.stableKey)
-                        },
-                        // UP from the first row goes to the chip that is actually selected, not to
-                        // whichever chip happens to sit above the list's left edge.
-                        modifier = Modifier
-                            .focusRequester(requester)
-                            .focusProperties {
-                                if (row.channel.stableKey == firstKey) up = activeCategoryRequester
-                            }
+            Box(modifier = Modifier.weight(1f)) {
+                // "No results" is NOT "no channels": an empty set after a search is a different
+                // situation from an addon with nothing to show, and the reference fork rendered both as
+                // the same blank screen. The field stays visible either way, or the user could not clear
+                // the query that emptied the list.
+                if (state.channels.isEmpty() && state.searchQuery.isNotBlank()) {
+                    Text(
+                        text = stringResource(R.string.live_tv_search_no_results),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = NuvioTheme.colors.TextSecondary,
+                        modifier = Modifier.padding(NuvioTheme.spacing.md)
                     )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs)
+                    ) {
+                        items(items = state.channels, key = { it.channel.stableKey }) { row ->
+                            val requester = requesters.getOrPut(row.channel.stableKey) { FocusRequester() }
+                            ChannelRow(
+                                row = row,
+                                resolving = state.resolvingChannelKey == row.channel.stableKey,
+                                onClick = { onPlayChannel(row.channel.stableKey) },
+                                onFocused = {
+                                    focusedKey = row.channel.stableKey
+                                    onRememberKey(row.channel.stableKey)
+                                    onChannelFocused(row.channel.stableKey)
+                                },
+                                // UP from the first row goes to the chip that is actually selected, not to
+                                // whichever chip happens to sit above the list's left edge.
+                                modifier = Modifier
+                                    .focusRequester(requester)
+                                    .focusProperties {
+                                        if (row.channel.stableKey == firstKey) up = activeCategoryRequester
+                                    }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -646,3 +678,95 @@ private fun EmptyState(
         }
     }
 }
+
+/**
+ * The channel search, in two states, and that is the whole design.
+ *
+ * **Not editing**: a navigable box that looks like a field and does **not** open the keyboard when it
+ * gains focus. Opening it on focus would make D-pad navigation unusable -- every pass through the header
+ * would summon the IME. The keyboard appears only when the user asks for it, with OK.
+ *
+ * **Editing**: the real field, focused, IME up. Back leaves editing without leaving the screen.
+ *
+ * Copied from the reference fork, which solved this exact problem on this exact platform. The retries on
+ * focus and on `show()` are not superstition: the IME takes a moment to exist, and single-shot versions
+ * of this are why on-screen keyboards "sometimes" do not appear.
+ */
+@Composable
+private fun ChannelSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    focusRequester: FocusRequester
+) {
+    var isEditing by rememberSaveable { mutableStateOf(false) }
+    var text by rememberSaveable { mutableStateOf(query) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val fieldFocus = remember { FocusRequester() }
+
+    // Leaving the screen must not leave the keyboard behind.
+    DisposableEffect(Unit) { onDispose { keyboardController?.hide() } }
+
+    BackHandler(enabled = isEditing) {
+        isEditing = false
+        keyboardController?.hide()
+    }
+
+    LaunchedEffect(isEditing) {
+        if (isEditing) {
+            repeat(5) {
+                kotlinx.coroutines.yield()
+                runCatching { fieldFocus.requestFocus() }
+                keyboardController?.show()
+            }
+        } else {
+            keyboardController?.hide()
+        }
+    }
+
+    if (isEditing) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { updated ->
+                text = updated
+                onQueryChange(updated)
+            },
+            singleLine = true,
+            placeholder = { Text(stringResource(R.string.live_tv_search_hint)) },
+            keyboardOptions = KeyboardOptions(
+                imeAction = androidx.compose.ui.text.input.ImeAction.Search
+            ),
+            modifier = Modifier
+                .width(SEARCH_FIELD_WIDTH)
+                .focusRequester(fieldFocus)
+                .onFocusChanged { focus ->
+                    if (!focus.isFocused && isEditing) {
+                        isEditing = false
+                        keyboardController?.hide()
+                    }
+                }
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .width(SEARCH_FIELD_WIDTH)
+                .height(SEARCH_FIELD_HEIGHT)
+                .clip(RoundedCornerShape(50))
+                .background(NuvioTheme.colors.BackgroundElevated)
+                .focusRequester(focusRequester)
+                .clickable { isEditing = true }
+                .padding(horizontal = NuvioTheme.spacing.md),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Text(
+                text = if (text.isBlank()) stringResource(R.string.live_tv_search_hint) else text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = NuvioTheme.colors.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+private val SEARCH_FIELD_WIDTH = 260.dp
+private val SEARCH_FIELD_HEIGHT = 40.dp
