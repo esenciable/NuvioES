@@ -18,6 +18,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.nuvio.tv.ui.screens.player.NuvioExoPlayerPerformanceHelper
+import com.nuvio.tv.ext.livetv.core.LiveTvLoadControl
 import com.nuvio.tv.ui.screens.player.PlayerPlaybackNetworking
 
 /**
@@ -51,9 +52,10 @@ internal class LiveTvPlayer(context: Context) {
         .setMediaSourceFactory(
             DefaultMediaSourceFactory(PlayerPlaybackNetworking.createDataSourceFactory(appContext))
         )
-        // Nuvio's own memory tuning, so a low-end TV box gets the RAM-tiered buffers instead of the
-        // stock defaults. Both are single calls into upstream, and neither modifies an upstream file.
-        .setLoadControl(NuvioExoPlayerPerformanceHelper.buildLoadControl(appContext))
+        // The LIVE control, not upstream's. Upstream's floor is 15 s and a live stream stutters on it;
+        // see LiveTvLoadControl for the measurement. This is where the plan's biggest correction lives,
+        // and it costs zero upstream files.
+        .setLoadControl(LiveTvLoadControl.build())
         .setBandwidthMeter(NuvioExoPlayerPerformanceHelper.buildBandwidthMeter(appContext))
         .build()
         .apply {

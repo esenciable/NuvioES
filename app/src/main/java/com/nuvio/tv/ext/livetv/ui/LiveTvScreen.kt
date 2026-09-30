@@ -51,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
@@ -765,12 +766,42 @@ private fun ChannelSearchField(
         // Upstream's search always composes its field for the same reason; the swap was my addition.
         readOnly = !isEditing,
         singleLine = true,
-        placeholder = { Text(stringResource(R.string.live_tv_search_hint)) },
+        // The field's own text style, which the placeholder inherits. The material3 default here rendered
+        // the hint so large that its first and last letters were clipped by the pill's bezel -- it looked
+        // like a heading that had escaped its box, not a search hint.
+        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp),
+        // Pill shaped, like the Guide button next to it. The default OutlinedTextField shape is almost
+        // square, and next to a pill it read as a different kind of control from a different app.
+        shape = RoundedCornerShape(50),
+        // Explicit colours, because the material3 defaults are dark-on-dark here: the text was rendering
+        // in a colour meant for a light surface, and the search box is the one field whose contents the
+        // user has to read back.
+        colors = androidx.compose.material3.TextFieldDefaults.colors(
+            focusedTextColor = NuvioTheme.colors.TextPrimary,
+            unfocusedTextColor = NuvioTheme.colors.TextPrimary,
+            focusedContainerColor = NuvioTheme.colors.BackgroundElevated,
+            unfocusedContainerColor = NuvioTheme.colors.BackgroundElevated,
+            cursorColor = NuvioTheme.colors.Secondary,
+            focusedIndicatorColor = NuvioTheme.colors.Secondary,
+            unfocusedIndicatorColor = NuvioTheme.colors.Border,
+            focusedPlaceholderColor = NuvioTheme.colors.TextSecondary,
+            unfocusedPlaceholderColor = NuvioTheme.colors.TextSecondary
+        ),
+        // The style is set on the placeholder Text itself, not only on the field: a bare Text inside the
+        // placeholder lambda does not inherit the field's textStyle, which is why the hint stayed huge and
+        // clipped after the first attempt.
+        placeholder = {
+            Text(
+                text = stringResource(R.string.live_tv_search_hint),
+                style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
+            )
+        },
         keyboardOptions = KeyboardOptions(
             imeAction = androidx.compose.ui.text.input.ImeAction.Search
         ),
         modifier = Modifier
             .width(SEARCH_FIELD_WIDTH)
+            .height(HEADER_CONTROL_HEIGHT)
             .focusRequester(focusRequester)
             .onFocusChanged { focus ->
                 if (!focus.isFocused && isEditing) {
@@ -793,4 +824,11 @@ private fun ChannelSearchField(
 }
 
 private val SEARCH_FIELD_WIDTH = 260.dp
+
+/**
+ * The search field is shortened to the height Guide already had, not the other way round: the buttons
+ * are the house control and were fine, so the field is what matches them. An OutlinedTextField defaults
+ * to 56dp, which stood noticeably taller than the button beside it.
+ */
+private val HEADER_CONTROL_HEIGHT = 44.dp
 private val SEARCH_FIELD_HEIGHT = 40.dp
