@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -90,6 +91,15 @@ fun LiveTvScreen(
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showGrid by remember { mutableStateOf(false) }
+
+    // Live playback is edge to edge, so the app's sidebar rail has to get out of the way. Verified on
+    // device that it stayed drawn over the picture, which makes it "the content area enlarged" rather
+    // than fullscreen. Cleared on dispose so the flag can never outlive this screen -- and cleared
+    // again for the error case, where fullscreen stops being immersive in spirit.
+    DisposableEffect(state.isFullscreen) {
+        LiveTvImmersive.set(state.isFullscreen)
+        onDispose { LiveTvImmersive.set(false) }
+    }
 
     // One player for the whole screen. The preview and the fullscreen surface share it, so opening a
     // channel does not build a second ExoPlayer and zapping does not build one per channel.

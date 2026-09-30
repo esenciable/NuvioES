@@ -1389,7 +1389,8 @@ private fun LegacySidebarScaffold(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val drawerItemFocusRequesters = rememberDrawerItemFocusRequesters(drawerItems)
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    val showSidebar = currentRoute in rootRoutes
+    // Live TV fullscreen draws over the whole picture, so the sidebar stands down while it is active.
+    val showSidebar = currentRoute in rootRoutes && !com.nuvio.tv.ext.livetv.ui.LiveTvImmersive.isActive
 
     LaunchedEffect(currentRoute) {
         longPressBackHeld.value = false
@@ -1781,7 +1782,8 @@ private fun ModernSidebarScaffold(
     onNavigate: (String) -> Unit,
     onExitApp: () -> Unit
 ) {
-    val showSidebar = currentRoute in rootRoutes
+    // Same stand-down as the other shell, so both sidebar styles behave the same in fullscreen.
+    val showSidebar = currentRoute in rootRoutes && !com.nuvio.tv.ext.livetv.ui.LiveTvImmersive.isActive
     val sidebarTokens = NuvioComponents.tokens.sidebar
     val collapsedSidebarWidth = if (sidebarCollapsed) NuvioTheme.spacing.none else sidebarTokens.collapsedWidth
     val openSidebarWidth = sidebarTokens.expandedWidth
