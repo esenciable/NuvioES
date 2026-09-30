@@ -2,6 +2,11 @@
 
 package com.nuvio.tv.ext.livetv.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -138,53 +143,44 @@ private fun CategoryChip(
     modifier: Modifier = Modifier
 ) {
     var focused by remember { mutableStateOf(false) }
-    // The focused fill is bright, so the label has to flip with it: a chip that keeps secondary text on
-    // the focused fill is the one chip a user cannot read from the couch.
+
+    // A plain clickable Box, NOT a FilterChip, and that is the whole fix.
+    //
+    // FilterChip builds its own focus node deep inside itself, so nothing applied out here can observe it
+    // or steer it: focusProperties for UP did nothing, a key handler on the chip did nothing, and
+    // onFocusChanged never fired, which meant the container that was waiting for that flag never acted
+    // either. All three of those work on ChannelRow, which builds its focus node with this same
+    // clickable, and that asymmetry was the answer. Verified on device: with FilterChip the UP key from a
+    // chip went nowhere and the search field stayed rendered but unreachable.
+    //
+    // The styling is by hand so the chip looks exactly the same as before.
     val textColor = if (focused || selected) {
         NuvioTheme.colors.OnSecondary
     } else {
         NuvioTheme.colors.TextSecondary
     }
+    val container = when {
+        focused && selected -> NuvioTheme.colors.SecondaryVariant
+        focused || selected -> NuvioTheme.colors.Secondary
+        else -> NuvioTheme.colors.BackgroundCard
+    }
+    val borderColor = if (focused || selected) NuvioTheme.colors.Secondary else NuvioTheme.colors.Border
+    val borderWidth = if (focused) NuvioTheme.spacing.xxs else NuvioTheme.spacing.hairline
 
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        modifier = modifier.onFocusChanged { focused = it.isFocused },
-        colors = FilterChipDefaults.colors(
-            containerColor = NuvioTheme.colors.BackgroundCard,
-            focusedContainerColor = NuvioTheme.colors.Secondary,
-            selectedContainerColor = NuvioTheme.colors.Secondary,
-            focusedSelectedContainerColor = NuvioTheme.colors.SecondaryVariant,
-            contentColor = textColor,
-            focusedContentColor = textColor,
-            selectedContentColor = textColor,
-            focusedSelectedContentColor = textColor
-        ),
-        border = FilterChipDefaults.border(
-            border = Border(
-                border = BorderStroke(NuvioTheme.spacing.hairline, NuvioTheme.colors.Border),
-                shape = RoundedCornerShape(50)
-            ),
-            focusedBorder = Border(
-                border = NuvioTheme.focusRing.border(NuvioTheme.spacing.xxs),
-                shape = RoundedCornerShape(50)
-            ),
-            selectedBorder = Border(
-                border = BorderStroke(NuvioTheme.spacing.hairline, NuvioTheme.colors.Secondary),
-                shape = RoundedCornerShape(50)
-            ),
-            focusedSelectedBorder = Border(
-                border = NuvioTheme.focusRing.border(NuvioTheme.spacing.xxs),
-                shape = RoundedCornerShape(50)
-            )
-        ),
-        shape = FilterChipDefaults.shape(shape = RoundedCornerShape(50))
+    Box(
+        modifier = modifier
+            .onFocusChanged { focused = it.isFocused }
+            .clip(RoundedCornerShape(50))
+            .background(container)
+            .border(borderWidth, borderColor, RoundedCornerShape(50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = NuvioTheme.spacing.md, vertical = NuvioTheme.spacing.xs),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = textColor,
-            modifier = Modifier.padding(horizontal = NuvioTheme.spacing.xs)
+            color = textColor
         )
     }
 }
