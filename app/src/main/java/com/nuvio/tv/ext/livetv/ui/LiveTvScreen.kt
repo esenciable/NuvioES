@@ -33,6 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -445,7 +448,7 @@ private fun ChannelRow(
         else -> stringResource(R.string.live_tv_no_guide)
     }
 
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .onFocusChanged {
@@ -460,25 +463,54 @@ private fun ChannelRow(
                 shape = shape
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = NuvioTheme.spacing.md, vertical = NuvioTheme.spacing.sm)
+            .padding(horizontal = NuvioTheme.spacing.md, vertical = NuvioTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = row.channel.name,
-            style = MaterialTheme.typography.titleSmall,
-            color = if (focused) NuvioTheme.colors.OnSecondaryVariant else NuvioTheme.colors.TextPrimary,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = NuvioTheme.colors.TextSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        // The logo the addon publishes, which the channel already carried and nothing drew.
+        //
+        // A fixed box with a neutral fill rather than a bare image: a list whose rows change height
+        // because some channels have artwork and some do not is worse than a list with no artwork at all,
+        // and plenty of channels in a real catalogue have none.
+        Box(
+            modifier = Modifier
+                .size(CHANNEL_LOGO_SIZE)
+                .clip(RoundedCornerShape(6.dp))
+                .background(NuvioTheme.colors.BackgroundElevated),
+            contentAlignment = Alignment.Center
+        ) {
+            row.channel.logoUrl?.let { logo ->
+                AsyncImage(
+                    model = logo,
+                    contentDescription = null,
+                    // Fit, not Crop: a channel logo squeezed into a square is unrecognisable, and the
+                    // letters of a wordmark are the whole point.
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(CHANNEL_LOGO_SIZE).padding(NuvioTheme.spacing.xxs)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(NuvioTheme.spacing.sm))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = row.channel.name,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (focused) NuvioTheme.colors.OnSecondaryVariant else NuvioTheme.colors.TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = NuvioTheme.colors.TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
+
+private val CHANNEL_LOGO_SIZE = 38.dp
 
 @Composable
 private fun ChannelDetails(
