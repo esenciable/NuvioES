@@ -314,7 +314,6 @@ private fun ChannelList(
             categories = LiveTvRows.visibleCategoriesFor(state.categories, state.hiddenCategoryIds),
             selectedCategory = state.selectedCategory,
             onSelectCategory = onSelectCategory,
-            activeRequester = activeCategoryRequester,
             requesters = categoryRequesters
         )
 

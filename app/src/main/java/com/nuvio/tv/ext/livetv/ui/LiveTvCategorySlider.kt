@@ -19,7 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -47,9 +46,16 @@ import com.nuvio.tv.ui.theme.NuvioTheme
  *
  * ### Focus
  *
- * The active chip is the row's restore target, so coming back up from the list lands on the category
- * that is actually selected. Entering the screen never asks this row for focus: the list does, because
- * the user came to watch channels and the chip row is a detour they may never take.
+ * The list owns where the slider is entered from: the first channel row declares `up =
+ * activeCategoryRequester`, so coming back up lands on the category that is actually selected.
+ *
+ * There is deliberately **no `focusRestorer` here.** It was there, and the device caught it: a
+ * restorer remembers the last chip the user touched and sends focus back to *that* one, so entering
+ * the slider from the first row landed on a previously visited chip instead of the active one -- two
+ * mechanisms answering the same question with opposite answers. The row's `up` is the single answer.
+ *
+ * Entering the screen never asks this row for focus: the list does, because the user came to watch
+ * channels and the chip row is a detour they may never take.
  *
  * The labels are resolved from string resources for the built-ins and from the addon for the rest;
  * selection always compares [LiveTvCategoryId], so translating a label can never change what the chip
@@ -60,7 +66,6 @@ internal fun LiveTvCategorySlider(
     categories: List<LiveTvCategory>,
     selectedCategory: LiveTvCategoryId,
     onSelectCategory: (LiveTvCategoryId) -> Unit,
-    activeRequester: FocusRequester,
     requesters: MutableMap<String, FocusRequester>,
     modifier: Modifier = Modifier
 ) {
@@ -69,7 +74,6 @@ internal fun LiveTvCategorySlider(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .focusRestorer(activeRequester)
             .horizontalScroll(scrollState),
         horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically
