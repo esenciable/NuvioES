@@ -252,12 +252,20 @@ private fun ChannelList(
             // every key before any child can consume it, so this does not depend on FilterChip's internals.
             .onPreviewKeyEvent { event ->
                 val isUp = event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp
+                if (isUp) {
+                    android.util.Log.i("LiveTvSearch", "UP at container: chipFocused=$chipFocused")
+                }
                 if (!isUp || !chipFocused) {
                     false
                 } else {
                     // Consume only if focus actually moved; swallowing the key after a failed request
                     // traps the D-pad, which is the shape of the fork's unpressable buttons.
-                    runCatching { searchRequester.requestFocus() }.isSuccess
+                    val moved = runCatching { searchRequester.requestFocus() }
+                    android.util.Log.i(
+                        "LiveTvSearch",
+                        "requestFocus on search field: moved=${moved.isSuccess} err=${moved.exceptionOrNull()}"
+                    )
+                    moved.isSuccess
                 }
             }
     ) {
@@ -366,7 +374,7 @@ private fun ChannelList(
             onSelectCategory = onSelectCategory,
             requesters = categoryRequesters,
             upTarget = searchRequester,
-            onChipFocused = { chipFocused = true }
+            onChipFocused = { chipFocused = true; android.util.Log.i("LiveTvSearch", "chip focused") }
         )
 
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
