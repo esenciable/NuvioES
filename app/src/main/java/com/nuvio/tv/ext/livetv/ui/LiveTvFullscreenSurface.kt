@@ -50,6 +50,13 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.R
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPlayRequest
 import com.nuvio.tv.ui.theme.NuvioTheme
+import kotlinx.coroutines.delay
+
+/**
+ * How long the overlay stays after the last interaction. Long enough to read the channel and what is on,
+ * short enough that it is not a permanent band over the picture.
+ */
+private const val HUD_TIMEOUT_MS = 4_000L
 
 /**
  * Fullscreen live playback, inside our own screen.
@@ -82,8 +89,21 @@ internal fun LiveTvFullscreenSurface(
     modifier: Modifier = Modifier
 ) {
     var playbackError by remember { mutableStateOf<PlaybackException?>(null) }
+    // The HUD is transient, like every player overlay on a television. It used to sit there forever,
+    // which is a permanent banner covering the bottom of the picture -- reported from the device with a
+    // screenshot. The reference fork hid its own after 3.5s, and I recorded that in the audit and then
+    // failed to carry it over.
+    var hudVisible by remember { mutableStateOf(true) }
+    // Bumped by any interaction so the countdown restarts instead of the HUD blinking away mid-use.
+    var hudTouch by remember { mutableStateOf(0) }
     val surfaceFocus = remember { FocusRequester() }
     val retryFocus = remember { FocusRequester() }
+
+    LaunchedEffect(hudTouch, request) {
+        hudVisible = true
+        delay(HUD_TIMEOUT_MS)
+        hudVisible = false
+    }
 
     // Back leaves the surface and returns to the list. Registered here rather than in the screen so
     // it is only active while this surface is on screen.
@@ -130,16 +150,22 @@ internal fun LiveTvFullscreenSurface(
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (event.key) {
                     Key.DirectionUp, Key.PageUp -> {
+                        hudTouch++
                         onPrevious()
                         true
                     }
 
                     Key.DirectionDown, Key.PageDown -> {
+                        hudTouch++
                         onNext()
                         true
                     }
 
-                    else -> false
+                    // Anything else wakes the HUD back up without consuming the key.
+                    else -> {
+                        hudTouch++
+                        false
+                    }
                 }
             }
     ) {
@@ -166,15 +192,17 @@ internal fun LiveTvFullscreenSurface(
         onRelease = { view -> view.player = null }
     )
 
-        FullscreenHud(
-            channelName = request.channel.name,
-            programmeTitle = programmeTitle,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.6f))
-                .padding(NuvioTheme.spacing.xl)
-        )
+        if (hudVisible) {
+            FullscreenHud(
+                channelName = request.channel.name,
+                programmeTitle = programmeTitle,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(NuvioTheme.spacing.xl)
+            )
+        }
 
         playbackError?.let {
             PlaybackErrorOverlay(
