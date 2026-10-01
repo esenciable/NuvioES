@@ -40,6 +40,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -118,6 +120,17 @@ fun LiveTvScreen(
         onDispose { LiveTvImmersive.set(false) }
     }
 
+    // The display stays on while the feature is on screen. A television that dimmed to standby
+    // mid-broadcast was reported from the device: nothing about live playback generates input events,
+    // so the OS idle timer expires and the screen goes dark on a channel that is playing perfectly.
+    // keepScreenOn on any composed view pins the window's FLAG_KEEP_SCREEN_ON for as long as this
+    // composition lives, and clearing it on dispose hands the idle timer back to the rest of the app.
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
+
     // One player for the whole screen. The preview and the fullscreen surface share it, so opening a
     // channel does not build a second ExoPlayer and zapping does not build one per channel.
     val liveTvPlayer = rememberLiveTvPlayer()
@@ -169,6 +182,8 @@ fun LiveTvScreen(
                 // A channel that never resolved reports through the same overlay as a playback error;
                 // the view model already skipped ahead a bounded number of dead channels before this.
                 resolveFailed = state.playFailure != null,
+                channels = state.channels,
+                onZapTo = onPlayChannel,
                 onRetry = { onRetryChannel(request.channel.stableKey) },
                 onPrevious = onPreviousChannel,
                 onNext = onNextChannel,
@@ -762,6 +777,10 @@ private fun ChannelSearchField(
 ) {
     var isEditing by rememberSaveable { mutableStateOf(false) }
     var text by rememberSaveable { mutableStateOf(query) }
+    // Focus must be VISIBLE on a television: the remote user has no cursor to point with, and a
+    // control whose focused state only shows inside its own text gives nothing back. The border is
+    // the indicator, white like the rest of the house's focused controls.
+    var fieldFocused by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
 
     // Leaving the screen must not leave the keyboard behind.
@@ -796,7 +815,10 @@ private fun ChannelSearchField(
             .background(NuvioTheme.colors.BackgroundElevated)
             .border(
                 width = 1.dp,
-                color = if (isEditing) NuvioTheme.colors.Secondary else NuvioTheme.colors.Border,
+                color = when {
+                    fieldFocused || isEditing -> Color.White
+                    else -> NuvioTheme.colors.Border
+                },
                 shape = RoundedCornerShape(50)
             )
             .padding(horizontal = NuvioTheme.spacing.lg),
@@ -827,6 +849,7 @@ private fun ChannelSearchField(
                 .weight(1f)
                 .focusRequester(focusRequester)
                 .onFocusChanged { focus ->
+                    fieldFocused = focus.isFocused
                     if (!focus.isFocused && isEditing) {
                         isEditing = false
                         keyboardController?.hide()

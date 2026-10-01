@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannelRow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -85,6 +86,8 @@ internal fun LiveTvFullscreenSurface(
     request: LiveTvPlayRequest,
     programmeTitle: String?,
     resolveFailed: Boolean,
+    channels: List<LiveTvChannelRow>,
+    onZapTo: (String) -> Unit,
     onRetry: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -99,6 +102,12 @@ internal fun LiveTvFullscreenSurface(
     var hudVisible by remember { mutableStateOf(true) }
     // Bumped by any interaction so the countdown restarts instead of the HUD blinking away mid-use.
     var hudTouch by remember { mutableStateOf(0) }
+    // The fork's zapping drawer: LEFT/RIGHT open a channel list over the playing video and the D-pad
+    // jumps directly. LEFT/RIGHT are not used for anything else on this surface, so owning them costs
+    // nothing -- and the toggle is handled HERE, not inside the drawer, because the key event from a
+    // row bubbles up after the drawer's own state change and a drawer-side handler would close and
+    // re-open on the same key press.
+    var drawerOpen by remember { mutableStateOf(false) }
     val surfaceFocus = remember { FocusRequester() }
 
     LaunchedEffect(hudTouch, request) {
@@ -107,9 +116,11 @@ internal fun LiveTvFullscreenSurface(
         hudVisible = false
     }
 
-    // Back leaves the surface and returns to the list. Registered here rather than in the screen so
-    // it is only active while this surface is on screen.
-    BackHandler(onBack = onExit)
+    // Back closes the drawer before it leaves the surface: the drawer is a layer of this surface,
+    // and the drawer's Atrás must not be an exit from playback.
+    BackHandler {
+        if (drawerOpen) drawerOpen = false else onExit()
+    }
 
     // Whether the stream that is on screen has actually drawn something.
     //
@@ -181,6 +192,15 @@ internal fun LiveTvFullscreenSurface(
                         true
                     }
 
+                    // The zapping drawer, like the fork. While it is open these keys bubble up from
+                    // the list rows (nothing focusable sits beside the drawer), so the same handler
+                    // closes it again -- one code path for open and close.
+                    Key.DirectionLeft, Key.DirectionRight -> {
+                        drawerOpen = !drawerOpen
+                        if (drawerOpen) hudVisible = false else hudTouch++
+                        true
+                    }
+
                     // OK is Reintentar while a failure is on screen. Consumed there so the request
                     // cannot leak into whatever else is composed; outside a failure it stays free.
                     Key.DirectionCenter, Key.Enter -> {
@@ -223,6 +243,22 @@ internal fun LiveTvFullscreenSurface(
         // draw never renders a frame, so the signal that lifts the cover never arrives.
         if (!firstFrameRendered) {
             Box(modifier = Modifier.matchParentSize().background(Color.Black))
+        }
+
+        // The zapping drawer: over the video, playback untouched. It renders the VISIBLE channel set,
+        // so the parental filter and the selected category hold here too -- the drawer cannot reach a
+        // channel the list does not show.
+        if (drawerOpen) {
+            LiveTvZappingDrawer(
+                channels = channels,
+                currentKey = request.channel.stableKey,
+                onSelect = { stableKey ->
+                    drawerOpen = false
+                    onZapTo(stableKey)
+                },
+                onDismiss = { drawerOpen = false },
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
         if (hudVisible) {
