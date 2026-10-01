@@ -12,10 +12,12 @@ import com.nuvio.tv.ext.livetv.domain.model.preferenceKey
  *
  * The in-screen pane is fed by [LiveTvViewModel], whose init loads the whole channel catalog and
  * syncs the guide -- a price worth paying once, on the screen that needs them. The entry inside the
- * app Settings reads the same five fields from a state built here instead: the catalogs are selected
- * and the guide sources are discovered (both pure, both cheap), and the three user preferences come
- * from the same [com.nuvio.tv.ext.livetv.data.LiveTvStore] flows the screen observes. No channels are
- * loaded, no EPG is fetched or parsed, and no stream is resolved -- the pane only flips toggles.
+ * app Settings reads the same fields from a state built here instead: the catalogs are selected
+ * and the guide sources are discovered (both pure, both cheap), the user preferences and the known
+ * sports come from the same [com.nuvio.tv.ext.livetv.data.LiveTvStore] flows the screen observes.
+ * No channels are loaded, no EPG is fetched or parsed, and no stream is resolved -- the pane only
+ * flips toggles. That design is exactly why the sport rows come from the store's `knownSports` and
+ * not from this state's matches list: matches is never populated here.
  */
 object LiveTvSettingsState {
 
@@ -29,14 +31,18 @@ object LiveTvSettingsState {
         epgSources: List<EpgSource>,
         hideAdultChannels: Boolean,
         disabledEpgSourceIds: Set<String>,
-        hiddenCategoryIds: Set<String>
+        hiddenCategoryIds: Set<String>,
+        disabledSports: Set<String> = emptySet(),
+        knownSports: List<String> = emptyList()
     ): LiveTvUiState = LiveTvUiState(
         status = if (catalogs.isEmpty()) LiveTvStatus.EMPTY else LiveTvStatus.READY,
         adultFilterActive = hideAdultChannels,
         categories = LiveTvRows.categoriesFor(catalogs),
         epgSources = epgSources,
         disabledEpgSourceIds = disabledEpgSourceIds,
-        hiddenCategoryIds = hiddenCategoryIds
+        hiddenCategoryIds = hiddenCategoryIds,
+        disabledSports = disabledSports,
+        knownSports = knownSports
     )
 
     /**

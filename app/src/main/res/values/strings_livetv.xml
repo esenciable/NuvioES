@@ -63,4 +63,11 @@
     <string name="live_tv_matches_empty">No live matches right now</string>
     <string name="live_tv_source_picker_title">Choose a source</string>
     <string name="live_tv_source_fallback">Source %1$d</string>
+
+    <!-- Sport chip bar over the matches grid, and the per-sport toggles in settings. -->
+    <string name="live_tv_sport_all">All</string>
+    <string name="live_tv_sport_other">Other</string>
+    <string name="live_tv_match_starts_at">Starts at %1$s</string>
+    <string name="live_tv_settings_sports">Sports</string>
+    <string name="live_tv_settings_sports_sub">Sports the addon is publishing right now</string>
 </resources>

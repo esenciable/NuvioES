@@ -47,7 +47,8 @@ internal fun LiveTvSettingsEntry(
             state = state,
             onSetAdultFilter = viewModel::setAdultFilter,
             onSetEpgSourceEnabled = viewModel::setEpgSourceEnabled,
-            onSetCategoryVisible = viewModel::setCategoryVisible
+            onSetCategoryVisible = viewModel::setCategoryVisible,
+            onSetSportEnabled = viewModel::setSportEnabled
         )
     }
 }

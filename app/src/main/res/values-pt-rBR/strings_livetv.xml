@@ -54,4 +54,11 @@
     <string name="live_tv_matches_empty">Não há partidas ao vivo agora</string>
     <string name="live_tv_source_picker_title">Escolha uma fonte</string>
     <string name="live_tv_source_fallback">Fonte %1$d</string>
+
+    <!-- Barra de esportes sobre a grade de partidas e as chaves por esporte nas configurações. -->
+    <string name="live_tv_sport_all">Todos</string>
+    <string name="live_tv_sport_other">Outros</string>
+    <string name="live_tv_match_starts_at">Começa às %1$s</string>
+    <string name="live_tv_settings_sports">Esportes</string>
+    <string name="live_tv_settings_sports_sub">Esportes que o addon publica agora mesmo</string>
 </resources>

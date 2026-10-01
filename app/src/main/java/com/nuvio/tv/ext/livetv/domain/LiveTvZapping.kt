@@ -50,4 +50,36 @@ object LiveTvZapping {
         val target = ((from + step) % size + size) % size
         return channels[target].stableKey
     }
+
+    /**
+     * Every channel a zap may try, in the order to try them.
+     *
+     * A single neighbour is not enough when channels die: a source-less channel must not strand the
+     * zap, so the caller walks this sequence and plays the first key that resolves. The sequence is
+     * every channel following [currentKey] in the [step] direction, wrapping at the list edges, and
+     * stopping BEFORE the origin -- so each other visible channel is tried exactly once and the pass
+     * is bounded by the list size by construction. The helper knows nothing about playability; it
+     * only orders the attempts, and the caller decides failure after the full pass finds nothing.
+     *
+     * A current channel missing from the list (a filter change, a refresh, mid-zap) uses the same
+     * virtual-position rule as [neighbourKey] -- before the first row going forward, after the last
+     * going back -- and the pass then covers the WHOLE list. An empty list yields nothing to try.
+     */
+    fun zapCandidates(channels: List<LiveTvChannel>, currentKey: String?, step: Int): List<String> {
+        if (channels.isEmpty()) return emptyList()
+
+        val size = channels.size
+        val found = channels.indexOfFirst { it.stableKey == currentKey }
+        val from = when {
+            found >= 0 -> found
+            step > 0 -> -1
+            else -> size
+        }
+        // With the origin in the list it is the one channel NOT tried; without it, the pass is full.
+        val count = if (found >= 0) size - 1 else size
+        return List(count) { i ->
+            val target = ((from + (i + 1) * step) % size + size) % size
+            channels[target].stableKey
+        }
+    }
 }

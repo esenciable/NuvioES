@@ -43,6 +43,25 @@ class LiveTvSettingsStateTest {
         )
         assertEquals(setOf("builtin:AR1"), state.disabledEpgSourceIds)
         assertEquals(setOf("addon:https://addon.test/abc|otro"), state.hiddenCategoryIds)
+        assertEquals(emptyList<Any>(), state.knownSports)
+    }
+
+    @Test
+    fun `carries the known sports the pane lists as toggle rows`() {
+        val state = LiveTvSettingsState.build(
+            catalogs = listOf(catalog("vivo", "Vivo")),
+            epgSources = emptyList(),
+            hideAdultChannels = true,
+            disabledEpgSourceIds = emptySet(),
+            hiddenCategoryIds = emptySet(),
+            knownSports = listOf("Fútbol", "Tenis")
+        )
+
+        // The rows come from the store's known-sports flow, never from a channel load: the settings
+        // ViewModel's documented design leaves matches empty, so this field is the ONLY list the
+        // pane can enumerate -- and a disabled sport must stay in it to stay re-enableable.
+        assertEquals(listOf("Fútbol", "Tenis"), state.knownSports)
+        assertEquals(emptyList<Any>(), state.matches)
     }
 
     @Test

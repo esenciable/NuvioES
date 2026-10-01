@@ -105,12 +105,18 @@ internal fun LiveTvFullscreenSurface(
     // Bumped by any interaction so the countdown restarts instead of the HUD blinking away mid-use.
     var hudTouch by remember { mutableStateOf(0) }
     // The fork's zapping drawer: LEFT/RIGHT open a channel list over the playing video and the D-pad
-    // jumps directly. LEFT/RIGHT are not used for anything else on this surface, so owning them costs
-    // nothing -- and the toggle is handled HERE, not inside the drawer, because the key event from a
-    // row bubbles up after the drawer's own state change and a drawer-side handler would close and
-    // re-open on the same key press.
+    // jumps directly. While it is open the keys are STATE-AWARE, not a toggle: LEFT closes, RIGHT is
+    // eaten (nothing sits to the right of a single-column list, and returning false would send focus
+    // search hunting for a target that is not there -- the way focus strands). LEFT/RIGHT are not used
+    // for anything else on this surface, so owning them costs nothing -- and the toggle-to-open is
+    // handled HERE, not inside the drawer, because the key event from a row bubbles up after the
+    // drawer's own state change and a drawer-side handler would close and re-open on the same key press.
     var drawerOpen by remember { mutableStateOf(false) }
     val surfaceFocus = remember { FocusRequester() }
+    // Bumped whenever the drawer closes (dismiss or selection) so focus is handed BACK to the playing
+    // surface. Retried across frames -- the same race the drawer fights on entry: the surface's node
+    // may not be ready on the first request right after the drawer leaves the composition.
+    var focusRestoreTick by remember { mutableStateOf(0) }
 
     LaunchedEffect(hudTouch, request) {
         hudVisible = true
@@ -119,9 +125,14 @@ internal fun LiveTvFullscreenSurface(
     }
 
     // Back closes the drawer before it leaves the surface: the drawer is a layer of this surface,
-    // and the drawer's Atrás must not be an exit from playback.
+    // and the drawer's Atrás must not be an exit from playback. Focus follows the drawer out.
     BackHandler {
-        if (drawerOpen) drawerOpen = false else onExit()
+        if (drawerOpen) {
+            drawerOpen = false
+            focusRestoreTick++
+        } else {
+            onExit()
+        }
     }
 
     // Whether the stream that is on screen has actually drawn something.
@@ -184,6 +195,17 @@ internal fun LiveTvFullscreenSurface(
         runCatching { surfaceFocus.requestFocus() }
     }
 
+    // Focus returns to the playing surface when the drawer closes. Retried across frames (house
+    // pattern): a single request right after the drawer leaves the composition races the removal of
+    // the focused row's node and can be dropped, leaving nothing focused on the surface.
+    LaunchedEffect(focusRestoreTick) {
+        if (focusRestoreTick == 0) return@LaunchedEffect
+        repeat(5) {
+            kotlinx.coroutines.yield()
+            runCatching { surfaceFocus.requestFocus() }
+        }
+    }
+
     // On failure the D-pad STAYS with the zapping. This is the deliberate reversal of an earlier
     // design that handed focus to the retry button on error: the owner reported zapping dying
     // whenever the next channel failed, and that is not how a television behaves. The failure is
@@ -224,16 +246,31 @@ internal fun LiveTvFullscreenSurface(
                         true
                     }
 
-                    // The zapping drawer, like the fork. While it is open these keys bubble up from
-                    // the list rows (nothing focusable sits beside the drawer), so the same handler
-                    // closes it again -- one code path for open and close.
+                    // The zapping drawer, like the fork -- but state-aware, not a toggle. Closed:
+                    // either direction opens it. Open: LEFT closes it and RIGHT is CONSUMED and does
+                    // nothing. RIGHT-is-eaten rather than `false` on purpose: a single-column drawer
+                    // has nothing to its right, and returning false hands the key to the focus
+                    // system, which finds no focusable there and can strand or leak focus out of the
+                    // drawer -- the drawer must stay an island. With the drawer holding focus this
+                    // branch never fires anyway: the drawer's own column consumes LEFT and the rows
+                    // keep UP/DOWN, so this is the fallback for the moments focus is still on the
+                    // surface while the drawer animates in.
                     Key.DirectionLeft, Key.DirectionRight -> {
                         // The drawer lists channels; a match plays with none (see the UP/DOWN guard),
                         // so LEFT/RIGHT open nothing where there is no channel context.
                         if (channels.isEmpty()) return@onKeyEvent false
-                        drawerOpen = !drawerOpen
-                        if (drawerOpen) hudVisible = false else hudTouch++
-                        true
+                        if (drawerOpen) {
+                            if (event.key == Key.DirectionLeft) {
+                                drawerOpen = false
+                                focusRestoreTick++
+                            }
+                            // RIGHT with the drawer open: consumed, deliberately inert.
+                            true
+                        } else {
+                            drawerOpen = true
+                            hudVisible = false
+                            true
+                        }
                     }
 
                     // OK while the drawer is open belongs to the focused row (its click). The surface
@@ -290,9 +327,13 @@ internal fun LiveTvFullscreenSurface(
                 currentKey = request.channel.stableKey,
                 onSelect = { stableKey ->
                     drawerOpen = false
+                    // The drawer leaves the composition and the surface must hold focus again -- even
+                    // when the selection plays the channel already on screen (same request, so the
+                    // request-keyed effect above does not re-run to do it).
+                    focusRestoreTick++
                     onZapTo(stableKey)
                 },
-                onDismiss = { drawerOpen = false },
+                onDismiss = { drawerOpen = false; focusRestoreTick++ },
                 modifier = Modifier.fillMaxSize()
             )
         }

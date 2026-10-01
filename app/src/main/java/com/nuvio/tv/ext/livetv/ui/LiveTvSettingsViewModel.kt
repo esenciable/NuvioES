@@ -6,6 +6,7 @@ import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.ext.livetv.data.LiveTvStore
 import com.nuvio.tv.ext.livetv.domain.EpgSourceDiscovery
 import com.nuvio.tv.ext.livetv.domain.LiveTvSettingsState
+import com.nuvio.tv.ext.livetv.domain.LiveTvSports
 import com.nuvio.tv.ext.livetv.domain.LiveTvCatalog
 import com.nuvio.tv.ext.livetv.domain.TvCatalogSelector
 import com.nuvio.tv.ext.livetv.domain.model.EpgSource
@@ -43,6 +44,9 @@ class LiveTvSettingsViewModel @Inject constructor(
     private var hideAdultChannels: Boolean = true
     private var disabledEpgSourceIds: Set<String> = emptySet()
     private var hiddenCategoryIds: Set<String> = emptySet()
+    private var disabledSports: Set<String> = emptySet()
+    /** Sports the screen observed the addon publishing; the pane's toggle rows come from this. */
+    private var knownSports: List<String> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -79,6 +83,21 @@ class LiveTvSettingsViewModel @Inject constructor(
                 publish()
             }
         }
+        viewModelScope.launch {
+            liveTvStore.disabledSports.collect { disabled ->
+                disabledSports = disabled
+                publish()
+            }
+        }
+        viewModelScope.launch {
+            liveTvStore.knownSports.collect { observed ->
+                // The store is a set; the pane wants a stable order, so re-apply the same sort the
+                // screen's own sportKeysOf produces -- alphabetical, other bucket last. Reading the
+                // store here is the whole point: no channel load ever happens in this ViewModel.
+                knownSports = LiveTvSports.sortForDisplay(observed)
+                publish()
+            }
+        }
     }
 
     fun setAdultFilter(hide: Boolean) {
@@ -101,13 +120,20 @@ class LiveTvSettingsViewModel @Inject constructor(
         viewModelScope.launch { liveTvStore.setCategoryVisible(key, visible) }
     }
 
+    /** Turns a sport's matches on or off; the store flow re-publishes to both entry points. */
+    fun setSportEnabled(sportKey: String, enabled: Boolean) {
+        viewModelScope.launch { liveTvStore.setSportEnabled(sportKey, enabled) }
+    }
+
     private fun publish() {
         _state.value = LiveTvSettingsState.build(
             catalogs = catalogs,
             epgSources = epgSources,
             hideAdultChannels = hideAdultChannels,
             disabledEpgSourceIds = disabledEpgSourceIds,
-            hiddenCategoryIds = hiddenCategoryIds
+            hiddenCategoryIds = hiddenCategoryIds,
+            disabledSports = disabledSports,
+            knownSports = knownSports
         )
     }
 }

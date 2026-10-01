@@ -18,6 +18,7 @@ import com.nuvio.tv.ext.livetv.domain.EpgSourceDiscovery
 import com.nuvio.tv.ext.livetv.domain.LiveTvCatalog
 import com.nuvio.tv.ext.livetv.domain.LiveTvPartition
 import com.nuvio.tv.ext.livetv.domain.LiveTvRows
+import com.nuvio.tv.ext.livetv.domain.LiveTvSports
 import com.nuvio.tv.ext.livetv.domain.LiveTvZapping
 import com.nuvio.tv.ext.livetv.domain.TvCatalogSelector
 import com.nuvio.tv.ext.livetv.domain.model.EpgSource
@@ -110,6 +111,10 @@ class LiveTvViewModel @Inject constructor(
      */
     private var matches: List<LiveTvChannel> = emptyList()
     private var hideAdultChannels: Boolean = true
+    /** The sports whose matches the settings pane turned off. Empty is the default: everything on. */
+    private var disabledSports: Set<String> = emptySet()
+    /** The last sport set written to the store, so repeated publishes do not hit it again. */
+    private var lastKnownSportsWritten: Set<String> = emptySet()
     private var searchQuery: String = ""
     private var guide: EpgSnapshot = EpgSnapshot.EMPTY
     private var epgSources: List<EpgSource> = emptyList()
@@ -138,7 +143,7 @@ class LiveTvViewModel @Inject constructor(
             liveTvStore.hideAdultChannels.collect { hide ->
                 if (hide == hideAdultChannels) return@collect
                 hideAdultChannels = hide
-                applyAdultFilter()
+                applyPartitionAndFilters()
                 publishIfSettled()
             }
         }
@@ -147,6 +152,14 @@ class LiveTvViewModel @Inject constructor(
                 if (disabled == disabledEpgSourceIds) return@collect
                 disabledEpgSourceIds = disabled
                 syncEpgSources()
+            }
+        }
+        viewModelScope.launch {
+            liveTvStore.disabledSports.collect { disabled ->
+                if (disabled == disabledSports) return@collect
+                disabledSports = disabled
+                applyPartitionAndFilters()
+                publishIfSettled()
             }
         }
         viewModelScope.launch {
@@ -173,6 +186,11 @@ class LiveTvViewModel @Inject constructor(
         viewModelScope.launch { liveTvStore.setEpgSourceEnabled(sourceId, enabled) }
     }
 
+    /** Turns a sport's matches on or off in the Partidos section; the store flow re-publishes. */
+    fun setSportEnabled(sportKey: String, enabled: Boolean) {
+        viewModelScope.launch { liveTvStore.setSportEnabled(sportKey, enabled) }
+    }
+
     /**
      * Shows or hides one category in the slider.
      *
@@ -185,7 +203,7 @@ class LiveTvViewModel @Inject constructor(
     }
 
     /**
-     * Moves the in-screen player down one channel, wrapping at the end.
+     * Moves the in-screen player down one channel, skipping every source-less channel until one plays.
      *
      * Zapping runs over [channels] -- the list the screen can actually see, already filtered -- so it
      * cannot step onto a channel the parental filter removed or step outside the category. The current
@@ -195,26 +213,53 @@ class LiveTvViewModel @Inject constructor(
         zap(step = 1)
     }
 
-    /** Moves the in-screen player up one channel, wrapping at the start. */
+    /** Moves the in-screen player up one channel, skipping dead ones the same way. */
     fun previousChannel() {
         zap(step = -1)
     }
 
-    private fun zap(step: Int, skips: Int = 0) {
-        val nextKey = LiveTvZapping.neighbourKey(
+    /**
+     * Walks [LiveTvZapping.zapCandidates] until a channel resolves.
+     *
+     * A channel whose stream cannot be resolved must not strand the zap: the user asked to move, so
+     * the movement continues to the next candidate. The walk used to be bounded at [MAX_ZAP_SKIPS]
+     * dead channels per press (a fixed 3, from the days when only a single neighbour was computed per
+     * re-entry) -- but the owner reported being stranded in dead stretches LONGER than that bound: a
+     * run of source-less channels simply ate the three skips and the player stayed stuck. The bound is
+     * gone, replaced by the wrap-around guarantee of [LiveTvZapping.zapCandidates]: every visible
+     * channel in the step direction is tried exactly once, the pass is bounded by the list size by
+     * construction, and only when the FULL pass finds nothing does the typed failure surface.
+     */
+    private fun zap(step: Int) {
+        val candidates = LiveTvZapping.zapCandidates(
             channels = channels,
             currentKey = _focusedChannel.value,
             step = step
-        ) ?: return
-        // A channel whose stream cannot be resolved must not strand the zap: the user asked to move,
-        // so the movement continues to the next channel. Bounded, so a dead region of the catalogue
-        // cannot spin forever -- after [MAX_ZAP_SKIPS] dead channels in a row the overlay reports it
-        // and the keys keep working from there.
+        )
+        // Nothing to move to: the origin is the only channel there is (or the list is empty, which the
+        // surface already gates out). Reporting failure here would put an overlay over a channel that
+        // is playing fine.
+        if (candidates.isEmpty()) return
+        walkZap(candidates, index = 0)
+    }
+
+    /**
+     * Tries candidate [index]; on resolve failure, moves to the next one.
+     *
+     * [playChannel] keeps the `resolvingChannelKey` feedback alive per candidate, so the spinner walks
+     * the list with the attempts. Indexing a frozen list makes the recursion strictly grow, so this
+     * cannot loop. Exhausting the pass lands in [failWith] with no continuation: the typed failure is
+     * surfaced (the fullscreen overlay picks it up through `playFailure`), which is what the old bound
+     * documented but never actually did.
+     */
+    private fun walkZap(candidates: List<String>, index: Int) {
+        if (index == candidates.size) {
+            failWith(LiveTvPlayFailure.NO_STREAMS)
+            return
+        }
         playChannel(
-            nextKey,
-            onResolveFailure = {
-                if (skips + 1 < MAX_ZAP_SKIPS) zap(step, skips + 1)
-            }
+            candidates[index],
+            onResolveFailure = { walkZap(candidates, index + 1) }
         )
     }
 
@@ -322,7 +367,7 @@ class LiveTvViewModel @Inject constructor(
             }
 
             loadedChannels = loaded.channels
-            applyAdultFilter()
+            applyPartitionAndFilters()
             publish(
                 // A sports-only addon (or catalog) delivers nothing but rb_ events, so after the
                 // partition an empty TV list no longer means an empty screen: only when BOTH sides
@@ -382,24 +427,49 @@ class LiveTvViewModel @Inject constructor(
     }
 
     /**
-     * The adult filter runs exactly here.
+     * The adult filter and the sports filter run exactly here.
      *
-     * Everything downstream reads [channels], so the list, the preview resolver and the play action all
-     * see the same filtered set and cannot disagree about it. The reference fork checked in four separate
-     * places and still leaked through the handoff to the fullscreen player.
+     * Everything downstream reads [channels] and [matches], so the list, the matches grid, the
+     * preview resolver and the play action all see the same filtered sets and cannot disagree about
+     * them. The reference fork checked in four separate places and still leaked through the handoff
+     * to the fullscreen player.
      */
-    private fun applyAdultFilter() {
+    private fun applyPartitionAndFilters() {
         val filtered = if (hideAdultChannels) {
             loadedChannels.filterNot(AdultChannelFilter::isAdult)
         } else {
             loadedChannels
         }
         // The partition runs AFTER the adult filter, on the already-filtered set, so a match can no
-        // more reach the UI through the matches view than a channel can through the list. Everything
-        // downstream of this point sees a channel list with NO rb_ event in it.
+        // more reach the UI through the matches view than a channel can through the list. The sports
+        // filter runs AFTER the partition, so a disabled sport is gone before anything downstream --
+        // grid, chip bar and counts alike -- ever sees it. Everything downstream of this point sees
+        // a channel list with NO rb_ event in it and a matches list with no disabled sport in it.
         val partition = LiveTvPartition.split(filtered)
         channels = partition.channels
-        matches = partition.matches
+        rememberKnownSports(partition.matches)
+        matches = LiveTvSports.enabled(partition.matches, disabledSports)
+    }
+
+    /**
+     * Publishes the sports the matches carried to the store, so the settings screen can list them.
+     *
+     * The settings ViewModel deliberately never loads channels -- its documented design -- so it
+     * cannot derive this list itself; the screen, which HAS the matches, is the publisher, and the
+     * store bridges the two exactly as it bridges every preference the pane flips. The set is taken
+     * from the partition BEFORE [LiveTvSports.enabled] runs: a disabled sport must stay known, or
+     * its settings row would vanish and it could never be turned back on -- the same unreachable
+     * toggle the review caught when the rows were derived from the settings state's own matches.
+     *
+     * Deduplicated like the settings observers dedupe: publish() runs many times between catalog
+     * loads, and an identical set must not reach the store again. The field starts empty, so an
+     * empty observation at startup is also skipped instead of wiping a remembered list.
+     */
+    private fun rememberKnownSports(partitionedMatches: List<LiveTvChannel>) {
+        val sports = LiveTvSports.sportKeysOf(partitionedMatches).toSet()
+        if (sports == lastKnownSportsWritten) return
+        lastKnownSportsWritten = sports
+        viewModelScope.launch { liveTvStore.rememberSports(sports) }
     }
 
     /**
@@ -605,17 +675,15 @@ class LiveTvViewModel @Inject constructor(
     }
 
     private fun failWith(failure: LiveTvPlayFailure, onResolveFailure: (() -> Unit)? = null) {
-        // A failure with a continuation hands the decision to the caller (the bounded zap skip);
-        // without one, the typed failure is surfaced as-is.
+        // A failure with a continuation hands the decision to the caller (the zap walk moves to its
+        // next candidate); without one, the typed failure is surfaced as-is.
         if (onResolveFailure != null) onResolveFailure()
         else _state.update { it.copy(playFailure = failure) }
     }
 
-    private companion object {
-
-        /** Dead channels skipped in one zap before reporting the failure, per [zap]. */
-        const val MAX_ZAP_SKIPS = 3
-    }
+    private companion object
+    // The fixed per-press dead-channel bound (MAX_ZAP_SKIPS = 3) lived here. It is gone: see [zap]
+    // for the device-reported stranding it caused and the full-pass walk that replaced it.
 
     private fun publish(
         status: LiveTvStatus,
@@ -652,6 +720,7 @@ class LiveTvViewModel @Inject constructor(
                 selectedCategory = selectedCategory,
                 searchQuery = searchQuery,
                 hiddenCategoryIds = hiddenCategoryIds,
+                disabledSports = disabledSports,
                 totalChannelCount = channels.size,
                 guideProgrammeCount = guide.guide.totalProgramsParsed,
                 guideLoaded = !guide.isEmpty,

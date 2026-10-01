@@ -95,6 +95,21 @@ data class LiveTvUiState(
      * showing **every** category so a hidden one can be turned back on.
      */
     val hiddenCategoryIds: Set<String> = emptySet(),
+    /**
+     * The sports the user turned off in settings, by [LiveTvSports] sport key. Carried in state so
+     * the settings pane shows the current toggles; the filtering itself runs in the ViewModel, on
+     * the matches partition, so nothing downstream can see a disabled sport.
+     */
+    val disabledSports: Set<String> = emptySet(),
+    /**
+     * Every sport the addon's matches have been observed carrying, alphabetical with the other
+     * bucket last. The settings pane enumerates its toggle rows from this, NOT from [matches]: the
+     * settings state is built without loading channels (the settings ViewModel's documented
+     * design), so [matches] is always empty there and the rows must arrive through the store
+     * instead -- the screen observes the matches and publishes what it saw. A disabled sport stays
+     * in this list, or its row would vanish and it could never be turned back on.
+     */
+    val knownSports: List<String> = emptyList(),
     val totalChannelCount: Int = 0,
     val guideProgrammeCount: Int = 0,
     /** Whether any guide loaded at all. Distinguishes "nothing tried yet" from "loaded but empty". */

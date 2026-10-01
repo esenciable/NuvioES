@@ -65,8 +65,9 @@ import com.nuvio.tv.ui.theme.NuvioTheme
  * Focus behaviour: the rows are the only focusable things while open, so the remote cannot leak into
  * the surface behind it. The CURRENT channel is where focus starts, scrolled into view, because the
  * drawer is anchored to what is playing -- that is the reference point a viewer zaps from. OK plays
- * the focused channel and closes; LEFT closes and hands the D-pad back to the surface; BACK is
- * handled by the surface, which keeps its own Back handler alive behind the drawer.
+ * the focused channel and closes; LEFT closes and hands the D-pad back to the surface; RIGHT does
+ * nothing inside the drawer (a single-column list has nothing to its right); BACK is handled by the
+ * surface, which keeps its own Back handler alive behind the drawer.
  */
 @Composable
 internal fun LiveTvZappingDrawer(
@@ -87,9 +88,19 @@ internal fun LiveTvZappingDrawer(
         val currentIndex = channels.indexOfFirst { it.channel.stableKey == currentKey }
 
         // The drawer opens anchored on the channel that is playing.
+        //
+        // Focus entry is RETRIED across frames. ONE requestFocus loses the race against the lazy
+        // composition and the scrollToItem -- the row that should take focus is often not composed
+        // yet when the effect first runs, the request dies, and the owner reported having to press
+        // OK before the drawer ever held focus. This is the house pattern (the search field and the
+        // matches grid retry the same way): yield a frame between attempts and swallow the expected
+        // "not initialised yet" failure.
         LaunchedEffect(currentKey, channels.size) {
             if (currentIndex > 0) listState.scrollToItem(currentIndex)
-            runCatching { itemFocus.requestFocus() }
+            repeat(5) {
+                kotlinx.coroutines.yield()
+                runCatching { itemFocus.requestFocus() }
+            }
         }
 
         Row(modifier = Modifier.fillMaxSize()) {
@@ -101,10 +112,15 @@ internal fun LiveTvZappingDrawer(
                     .onKeyEvent { event ->
                         // LEFT closes: the same direction that opened the drawer undoes it, and the
                         // column owns the key so the surface never zaps underneath the open drawer.
+                        // The surface's own handler closes it too when focus is still on the surface;
+                        // this branch only runs once the drawer actually holds focus.
                         if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft) {
                             onDismiss()
                             true
                         } else {
+                            // RIGHT is NOT bubbled up on purpose: focus search would find nothing to
+                            // the right of a single-column list and could strand or leak focus. The
+                            // surface eats RIGHT while the drawer is open -- the drawer stays an island.
                             false
                         }
                     }

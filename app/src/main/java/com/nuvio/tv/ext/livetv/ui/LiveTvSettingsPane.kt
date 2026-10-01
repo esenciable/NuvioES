@@ -17,6 +17,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import com.nuvio.tv.R
+import com.nuvio.tv.ext.livetv.domain.LiveTvSports
 import com.nuvio.tv.ext.livetv.domain.model.EpgSource
 import com.nuvio.tv.ext.livetv.domain.model.EpgSourceOrigin
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategory
@@ -45,7 +46,8 @@ internal fun LiveTvSettingsPane(
     state: LiveTvUiState,
     onSetAdultFilter: (Boolean) -> Unit,
     onSetEpgSourceEnabled: (String, Boolean) -> Unit,
-    onSetCategoryVisible: (LiveTvCategoryId, Boolean) -> Unit
+    onSetCategoryVisible: (LiveTvCategoryId, Boolean) -> Unit,
+    onSetSportEnabled: (String, Boolean) -> Unit
 ) {
     val listState = rememberLazyListState()
     val firstToggle = remember { FocusRequester() }
@@ -107,6 +109,32 @@ internal fun LiveTvSettingsPane(
             )
         }
 
+        item(key = "sports-header") {
+            SettingsGroupCard(
+                title = stringResource(R.string.live_tv_settings_sports),
+                subtitle = stringResource(R.string.live_tv_settings_sports_sub)
+            ) {}
+        }
+
+        // Every sport the screen has observed the addon publishing, delivered through the store
+        // because the settings ViewModel deliberately never loads channels -- its own state's
+        // `matches` is always empty, which is exactly why enumerating from it shipped no rows at
+        // all (the review's finding). A disabled sport stays known, so its row survives and can be
+        // turned back on. Before the user first opens Partidos nothing has been observed yet: the
+        // group then shows its header with no rows, a real state, not a bug.
+        items(
+            items = state.knownSports,
+            key = { "sport-$it" }
+        ) { sport ->
+            val enabled = sport !in state.disabledSports
+            SettingsToggleRow(
+                title = sportDisplayLabel(sport),
+                subtitle = null,
+                checked = enabled,
+                onToggle = { onSetSportEnabled(sport, !enabled) }
+            )
+        }
+
         item(key = "sources-header") {
             SettingsGroupCard(
                 title = stringResource(R.string.live_tv_settings_sources),
@@ -137,3 +165,15 @@ private fun sourceOriginLabel(source: EpgSource): String = when (source.origin) 
 /** A hideable category is always an addon catalog, so the addon's own name is the label. */
 private fun LiveTvCategory.settingsLabel(): String =
     addonCatalogName ?: (id as? LiveTvCategoryId.Addon)?.catalogId.orEmpty()
+
+/**
+ * A sport row's display text. The stored key stays stable; only the "other" bucket (digit-only or
+ * missing genre, the addon's old discipline numbers) is localised rather than shown as a number.
+ */
+@Composable
+private fun sportDisplayLabel(sportKey: String): String =
+    if (sportKey == LiveTvSports.OTHER_KEY) {
+        stringResource(R.string.live_tv_sport_other)
+    } else {
+        sportKey
+    }

@@ -135,8 +135,13 @@ internal fun LiveTvCategorySlider(
     }
 }
 
+/**
+ * Internal rather than private so the matches screen's sport chip bar reuses it: one house look for
+ * every chip row on the feature, and a fork of this styling in a second file would be two answers
+ * to "what does a selected chip look like" waiting to drift apart.
+ */
 @Composable
-private fun CategoryChip(
+internal fun CategoryChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,

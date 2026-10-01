@@ -2,6 +2,7 @@ package com.nuvio.tv.ext.livetv.data
 
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.domain.model.Addon
+import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.repository.StreamRepository
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayableStream
 import com.nuvio.tv.ext.livetv.domain.LiveTvStreamResolver
@@ -44,9 +45,33 @@ class AddonStreamResolver(
 
             LiveTvPlayableStream(
                 url = url,
-                name = stream.getDisplayNameOrNull(),
+                name = sourceLabel(stream),
                 headers = stream.behaviorHints?.proxyHeaders?.request?.takeIf { it.isNotEmpty() }
             )
         }
     }
 }
+
+/**
+ * The label the source picker offers for one stream, or null when nothing identifiable remains and
+ * the picker falls back to its localized "Fuente N".
+ *
+ * The addon's sports streams carry `name = "Esencial Sport"` -- the BRAND, identical on every
+ * source -- and `title = "<match title> · <real source name>"`. Offering the brand would give the
+ * picker four indistinguishable rows, which the owner explicitly complained about, so when the
+ * title carries the "·" separator the label is the LAST non-blank segment: the source. Without the
+ * separator there is nothing to split, and the plain display name is the best there is.
+ */
+internal fun sourceLabel(stream: Stream): String? {
+    val title = stream.title
+    if (title != null && title.contains(SEPARATOR)) {
+        return title.split(SEPARATOR)
+            .lastOrNull { it.isNotBlank() }
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+    }
+    return stream.getDisplayNameOrNull()?.takeIf { it.isNotBlank() }
+}
+
+/** The separator the owner's addon uses between the match title and the real source name. */
+private const val SEPARATOR = "·"

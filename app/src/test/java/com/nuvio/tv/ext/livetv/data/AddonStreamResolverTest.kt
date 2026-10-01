@@ -168,6 +168,60 @@ class AddonStreamResolverTest {
         }
     }
 
+    @Test
+    fun `the label of a titled stream is the last segment after the separator`() {
+        // The addon's sports streams carry name="Esencial Sport" (the brand, identical everywhere)
+        // and title="<match> · <real source>". The picker must offer the SOURCE, so it is the last
+        // non-blank segment of the title that survives.
+        assertEquals(
+            "TyC Sports",
+            sourceLabel(stream(name = "Esencial Sport", title = "River vs Boca · TyC Sports"))
+        )
+    }
+
+    @Test
+    fun `blank segments inside the title are skipped to find the source`() {
+        assertEquals(
+            "ESPN",
+            sourceLabel(stream(name = "Esencial Sport", title = "Partido · · ESPN"))
+        )
+    }
+
+    @Test
+    fun `a title without the separator falls back to the display name`() {
+        assertEquals("Fuente HD", sourceLabel(stream(name = "Fuente HD", title = "sin separador")))
+    }
+
+    @Test
+    fun `without a title the display name is the label`() {
+        assertEquals("Fuente", sourceLabel(stream(name = "Fuente", title = null)))
+    }
+
+    @Test
+    fun `nothing identifiable is null, so the picker falls back to Fuente N`() {
+        assertNull(sourceLabel(stream(name = null, title = null, description = null)))
+        assertNull(sourceLabel(stream(name = "   ", title = null, description = null)))
+    }
+
+    @Test
+    fun `resolveAll carries the derived source labels in order`() {
+        runTest {
+            val repository = FakeStreamRepository(
+                NetworkResult.Success(
+                    listOf(
+                        stream(url = "https://cdn.test/one.m3u8", name = "Esencial Sport", title = "Partido · Fox Sports"),
+                        stream(url = "https://cdn.test/two.m3u8", name = "Esencial Sport", title = "Partido · TyC Sports")
+                    )
+                )
+            )
+
+            assertEquals(
+                listOf("Fox Sports", "TyC Sports"),
+                AddonStreamResolver(repository).resolveAll(addon(), channel()).map { it.name }
+            )
+        }
+    }
+
     private class FakeStreamRepository(
         private val response: NetworkResult<List<Stream>>
     ) : StreamRepository {
@@ -221,13 +275,16 @@ class AddonStreamResolverTest {
     )
 
     private fun stream(
-        url: String?,
+        url: String? = "https://cdn.test/live.m3u8",
         externalUrl: String? = null,
-        headers: Map<String, String>? = null
+        headers: Map<String, String>? = null,
+        name: String? = "Fuente",
+        title: String? = null,
+        description: String? = null
     ) = Stream(
-        name = "Fuente",
-        title = null,
-        description = null,
+        name = name,
+        title = title,
+        description = description,
         url = url,
         ytId = null,
         infoHash = null,

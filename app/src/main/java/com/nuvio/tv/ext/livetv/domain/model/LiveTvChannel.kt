@@ -38,7 +38,13 @@ data class LiveTvChannel(
     val logoUrl: String?,
     val posterUrl: String?,
     val description: String?,
-    val genres: List<String>
+    val genres: List<String>,
+    /**
+     * The ISO kickoff instant the addon publishes in the catalog meta's `released` field, when it
+     * ships it. Null until the addon deploys that change, which is why every consumer degrades to
+     * the no-kickoff look instead of assuming the field is there.
+     */
+    val kickoffIso: String? = null
 ) {
     /**
      * Deduplication key: one entry per channel per addon.
@@ -78,5 +84,6 @@ fun MetaPreview.toLiveTvChannel(
     logoUrl = logo?.takeIf(String::isNotBlank) ?: poster?.takeIf(String::isNotBlank),
     posterUrl = poster?.takeIf(String::isNotBlank),
     description = description?.takeIf(String::isNotBlank),
-    genres = genres
+    genres = genres,
+    kickoffIso = released?.takeIf(String::isNotBlank)
 )

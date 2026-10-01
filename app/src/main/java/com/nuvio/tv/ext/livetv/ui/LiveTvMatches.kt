@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -46,7 +49,9 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.nuvio.tv.R
+import com.nuvio.tv.ext.livetv.domain.LiveTvKickoff
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
+import com.nuvio.tv.ext.livetv.domain.LiveTvSports
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPlayRequest
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
@@ -254,47 +259,132 @@ internal fun LiveTvMatchesGrid(
         return
     }
 
-    // The screen MUST open with a focused card. A television screen that opens with nothing focusable
-    // is a dead end -- the remote's every key lands nowhere, which is the reference fork's audit
-    // blocker A4 verbatim, reproduced here the day this section shipped without its own requestFocus.
-    val firstCardFocus = remember { FocusRequester() }
+    // Which sport the grid is filtered to. Null means "Todos": every sport the addon currently
+    // publishes (already narrowed by the settings' disabled-sports filter, which runs upstream in
+    // the ViewModel). The selection is screen-local on purpose: the bar reflects what is on air
+    // NOW, and a remembered chip for a sport the addon stopped publishing would be a filter over
+    // an empty list.
+    var selectedSport by remember { mutableStateOf<String?>(null) }
+    val sports = remember(matches) { LiveTvSports.byCount(matches) }
+    val visibleMatches = remember(matches, selectedSport) {
+        selectedSport?.let { LiveTvSports.ofSport(matches, it) } ?: matches
+    }
+
+    // The screen MUST open with a focused control. A television screen that opens with nothing
+    // focusable is a dead end -- the remote's every key lands nowhere, which is the reference fork's
+    // audit blocker A4 verbatim, reproduced here the day this section shipped without its own
+    // requestFocus. With matches on air the entry point is the FIRST CHIP (Todos), and DOWN walks
+    // into the grid below; the card no longer plants focus itself, so exactly one element claims it.
+    val firstChipFocus = remember { FocusRequester() }
     LaunchedEffect(matches.size) {
         repeat(5) {
             kotlinx.coroutines.yield()
-            runCatching { firstCardFocus.requestFocus() }
+            runCatching { firstChipFocus.requestFocus() }
         }
     }
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(MATCH_GRID_COLUMNS),
-        modifier = modifier.fillMaxSize(),
-        // Horizontal padding here, not on the screen: the section is full-bleed, and the grid owns
-        // the margin so its cards never touch the display edge while the background still reads as
-        // one continuous surface.
-        contentPadding = PaddingValues(
-            horizontal = NuvioTheme.spacing.lg,
-            vertical = NuvioTheme.spacing.sm
-        ),
-        verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md),
-        horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)
+    Column(modifier = modifier.fillMaxSize()) {
+        SportChipBar(
+            sports = sports,
+            selectedSport = selectedSport,
+            onSelectSport = { selectedSport = it },
+            firstChipFocus = firstChipFocus,
+            modifier = Modifier.fillMaxWidth()
+        )
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(MATCH_GRID_COLUMNS),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            // Horizontal padding here, not on the screen: the section is full-bleed, and the grid owns
+            // the margin so its cards never touch the display edge while the background still reads as
+            // one continuous surface.
+            contentPadding = PaddingValues(
+                horizontal = NuvioTheme.spacing.lg,
+                vertical = NuvioTheme.spacing.sm
+            ),
+            verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md),
+            horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)
+        ) {
+            items(items = visibleMatches, key = { it.stableKey }) { match ->
+                MatchCard(
+                    match = match,
+                    resolving = resolvingKey == match.stableKey,
+                    onClick = { onPlayMatch(match.stableKey) }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The sports chip bar above the grid: one "Todos" chip, then every sport the addon currently
+ * publishes, ordered by [LiveTvSports.byCount] (count descending, then name).
+ *
+ * A `Row` with a shared scroll, NOT a `LazyRow` -- the same decision the category slider documents:
+ * the chip count is bounded by the addon's sport list, not by the match count, so every chip
+ * composes and the row scrolls as one piece.
+ */
+@Composable
+private fun SportChipBar(
+    sports: List<LiveTvSports.SportCount>,
+    selectedSport: String?,
+    onSelectSport: (String?) -> Unit,
+    firstChipFocus: FocusRequester,
+    modifier: Modifier = Modifier
+) {
+    val scrollState = rememberScrollState()
+    Row(
+        modifier = modifier
+            .horizontalScroll(scrollState)
+            // Padding here rather than on the grid keeps the chip bar and the cards on one shared
+            // left margin while the section stays full-bleed.
+            .padding(horizontal = NuvioTheme.spacing.lg, vertical = NuvioTheme.spacing.sm),
+        horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        items(items = matches, key = { it.stableKey }) { match ->
-            MatchCard(
-                match = match,
-                resolving = resolvingKey == match.stableKey,
-                onClick = { onPlayMatch(match.stableKey) },
-                focusRequester = if (match == matches.first()) firstCardFocus else null
+        SportChip(
+            label = stringResource(R.string.live_tv_sport_all),
+            selected = selectedSport == null,
+            onClick = { onSelectSport(null) },
+            modifier = Modifier.focusRequester(firstChipFocus)
+        )
+        sports.forEach { sport ->
+            SportChip(
+                label = sportLabel(sport.key),
+                selected = selectedSport == sport.key,
+                onClick = { onSelectSport(sport.key) },
+                modifier = Modifier
             )
         }
     }
+}
+
+/** A sport chip's display text. The stored key stays stable; only the "other" bucket is localised. */
+@Composable
+private fun sportLabel(sportKey: String): String =
+    if (sportKey == LiveTvSports.OTHER_KEY) {
+        stringResource(R.string.live_tv_sport_other)
+    } else {
+        sportKey
+    }
+
+/** The slider's chip, reused verbatim: one house look for every chip row on the screen. */
+@Composable
+private fun SportChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    CategoryChip(label = label, selected = selected, onClick = onClick, modifier = modifier)
 }
 
 @Composable
 private fun MatchCard(
     match: LiveTvChannel,
     resolving: Boolean,
-    onClick: () -> Unit,
-    focusRequester: FocusRequester? = null
+    onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
 
@@ -303,10 +393,6 @@ private fun MatchCard(
         modifier = Modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
-            .then(
-                // Only the first card carries the requester: it is where the section plants focus.
-                focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier
-            )
             .clip(shape)
             .background(if (focused) NuvioTheme.colors.SecondaryVariant else NuvioTheme.colors.Surface)
             .border(
@@ -335,11 +421,23 @@ private fun MatchCard(
                 )
             }
             if (isLiveBadge(match)) {
-                LiveBadge(
+                BadgeChip(
+                    text = "EN VIVO",
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(NuvioTheme.spacing.xs)
                 )
+            } else {
+                // Not on air: the kickoff time is the badge, in the DEVICE's timezone, or nothing at
+                // all when the addon has not started shipping the instant yet.
+                LiveTvKickoff.label(match.kickoffIso)?.let { kickoff ->
+                    BadgeChip(
+                        text = stringResource(R.string.live_tv_match_starts_at, kickoff),
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(NuvioTheme.spacing.xs)
+                    )
+                }
             }
         }
         Text(
@@ -347,7 +445,7 @@ private fun MatchCard(
             text = if (resolving) {
                 stringResource(R.string.live_tv_resolving)
             } else {
-                match.name
+                match.displayTitle()
             },
             style = MaterialTheme.typography.bodyMedium,
             color = if (focused) NuvioTheme.colors.OnSecondaryVariant else NuvioTheme.colors.TextPrimary,
@@ -361,13 +459,19 @@ private fun MatchCard(
     }
 }
 
+/**
+ * The badge pinned on a broadcast card. Hardcoded "EN VIVO" like the zapping drawer's badge, which
+ * set the house precedent: the string is a broadcast convention in every locale this app ships, and
+ * translating it would make the badge the only localised thing on an otherwise localized poster.
+ * (The kickoff badge reuses the exact same container -- one badge look, two messages.)
+ */
 @Composable
-private fun LiveBadge(modifier: Modifier = Modifier) {
-    // Hardcoded "EN VIVO" like the zapping drawer's badge, which set the house precedent: the string is
-    // a broadcast convention in every locale this app ships, and translating it would make the badge
-    // the only localised thing on an otherwise localized poster.
+private fun BadgeChip(
+    text: String,
+    modifier: Modifier = Modifier
+) {
     Text(
-        text = "EN VIVO",
+        text = text,
         style = MaterialTheme.typography.labelSmall,
         color = Color.White,
         fontWeight = FontWeight.Bold,
@@ -384,6 +488,20 @@ private fun LiveBadge(modifier: Modifier = Modifier) {
  * future casing tweak upstream cannot silently kill the badge.
  */
 private fun isLiveBadge(match: LiveTvChannel): Boolean =
-    match.name.startsWith("EN VIVO", ignoreCase = true)
+    match.name.startsWith(LIVE_PREFIX, ignoreCase = true)
+
+private const val LIVE_PREFIX = "EN VIVO"
+
+/**
+ * The card's title, without a leading "EN VIVO" stamp: the badge already says it, and repeating the
+ * prefix under the poster is the same information twice in two pixels of row. Falls back to the raw
+ * name when stripping would leave nothing to show.
+ */
+private fun LiveTvChannel.displayTitle(): String {
+    if (!isLiveBadge(this)) return name
+    return name.substring(LIVE_PREFIX.length)
+        .trimStart(':', ' ', '-', '·')
+        .ifBlank { name }
+}
 
 private const val MATCH_GRID_COLUMNS = 4

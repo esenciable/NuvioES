@@ -35,6 +35,19 @@ class LiveTvChannelTest {
     }
 
     @Test
+    fun `carries the meta's released instant as the kickoff, and blank as absent`() {
+        // The sibling addon change puts the ISO kickoff instant in `released`. Until it deploys the
+        // field is null -- and a blank string must degrade the same way, not become an empty badge.
+        val scheduled = meta(id = "1", name = "Uno", released = "2026-02-05T23:30:00Z")
+        val blank = meta(id = "2", name = "Dos", released = "   ")
+        val absent = meta(id = "3", name = "Tres", released = null)
+
+        assertEquals("2026-02-05T23:30:00Z", scheduled.toChannel().kickoffIso)
+        assertNull(blank.toChannel().kickoffIso)
+        assertNull(absent.toChannel().kickoffIso)
+    }
+
+    @Test
     fun `keys a channel by addon and id, not by position`() {
         // The reference fork keyed focus requesters by list INDEX while items were keyed by channel,
         // so after any filter a surviving row reused a requester attached to a disposed channel.
@@ -92,7 +105,8 @@ class LiveTvChannelTest {
         id: String,
         name: String,
         logo: String? = null,
-        poster: String? = null
+        poster: String? = null,
+        released: String? = null
     ) = MetaPreview(
         id = id,
         type = ContentType.TV,
@@ -104,7 +118,8 @@ class LiveTvChannelTest {
         description = null,
         releaseInfo = null,
         imdbRating = null,
-        genres = emptyList()
+        genres = emptyList(),
+        released = released
     )
 
     private fun MetaPreview.toChannel() = toLiveTvChannel(
