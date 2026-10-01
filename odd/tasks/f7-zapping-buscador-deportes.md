@@ -53,4 +53,11 @@ construir: de dónde salen los partidos, qué card, y qué reproductor para mult
 
 ## Registro de trabajo
 
-(cada tarea cierra con work-unit commit; se registra acá)
+- T1+T2+T3 — commit `75d588d83`, verificado en TV real (192.168.18.6): zap 421 (negro) → 416
+  reproduciendo; buscador con texto centrado y (X) visible; "tlc" → 4 canales.
+- T5 — ya existe: `probe-channels.ts` + `live-health.ts` sondean los canales dentro del
+  contenedor y el servidor oculta los muertos confirmados en DOS pasadas. Falta correrlo, no
+  construirlo.
+- T4 — exploración lista: el addon ya publica la familia de deportes (catálogo
+  `esencial-play-sports-live` type tv, metas con SVG broadcast de escudos, streams múltiples
+  ordenados por prioridad). Propuesta presentada al dueño; decisión pendiente.
