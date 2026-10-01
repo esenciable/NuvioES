@@ -58,7 +58,7 @@
     <!-- Barra de deportes sobre la cuadrícula de partidos, y los toggles por deporte en ajustes. -->
     <string name="live_tv_sport_all">Todos</string>
     <string name="live_tv_sport_other">Otros</string>
-    <string name="live_tv_match_starts_at">Empieza a las %1$s</string>
+    <string name="live_tv_match_kickoff_badge">%1$s · termina %2$s</string>
     <string name="live_tv_settings_sports">Deportes</string>
     <string name="live_tv_settings_sports_sub">Deportes que el addon publica ahora mismo</string>
 </resources>

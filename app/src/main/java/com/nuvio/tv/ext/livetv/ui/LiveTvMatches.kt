@@ -52,6 +52,7 @@ import com.nuvio.tv.R
 import com.nuvio.tv.ext.livetv.domain.LiveTvKickoff
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
 import com.nuvio.tv.ext.livetv.domain.LiveTvSports
+import java.time.Instant
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPlayRequest
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
@@ -135,7 +136,11 @@ internal fun LiveTvMatchesScreen(
                 onExit = onExitFullscreen
             )
         } else {
-            when (state.status) {
+            // The grid gates on matchesStatus, NOT on the channel list's status: the two load on
+            // different schedules, and gating here would make Partidos wait for every TV catalog the
+            // channels screen needs. EMPTY still reaches the grid -- the partition answered and found
+            // no matches, which the grid's own empty state says better than a second message would.
+            when (state.matchesStatus) {
                 LiveTvStatus.LOADING -> CenteredMessage(stringResource(R.string.live_tv_loading))
 
                 LiveTvStatus.ERROR -> MatchesErrorState(
@@ -143,9 +148,6 @@ internal fun LiveTvMatchesScreen(
                     onRetry = onRetry
                 )
 
-                // EMPTY and READY both reach the grid: EMPTY means the catalogs answered and the
-                // partition produced no matches, which the grid's own empty state says better than a
-                // second message would.
                 else -> LiveTvMatchesGrid(
                     matches = state.matches,
                     resolvingKey = state.resolvingChannelKey,
@@ -428,11 +430,20 @@ private fun MatchCard(
                         .padding(NuvioTheme.spacing.xs)
                 )
             } else {
-                // Not on air: the kickoff time is the badge, in the DEVICE's timezone, or nothing at
-                // all when the addon has not started shipping the instant yet.
-                LiveTvKickoff.label(match.kickoffIso)?.let { kickoff ->
+                // Not on air: the badge IS the kickoff, in the DEVICE's timezone -- the owner asked
+                // for the day and the time the match starts (the time inside the addon's SVG card is
+                // too small to read), plus the estimated end. Both helpers are null-safe on the same
+                // ISO field, so they are null together and the badge degrades to nothing at all, the
+                // documented look for a card whose addon has not started shipping `released`.
+                // `now` is remembered so recompositions of the same card never shift the label
+                // mid-scroll; a fresh composition re-reads the clock, which is close enough for a
+                // day-granular badge.
+                val now = remember { Instant.now() }
+                val start = LiveTvKickoff.startDayAndTime(match.kickoffIso, now)
+                val end = LiveTvKickoff.endsAround(match.kickoffIso, match.genres.firstOrNull(), now)
+                if (start != null && end != null) {
                     BadgeChip(
-                        text = stringResource(R.string.live_tv_match_starts_at, kickoff),
+                        text = stringResource(R.string.live_tv_match_kickoff_badge, start, end),
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(NuvioTheme.spacing.xs)

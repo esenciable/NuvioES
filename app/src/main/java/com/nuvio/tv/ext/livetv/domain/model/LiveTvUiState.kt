@@ -66,6 +66,15 @@ enum class LiveTvStatus {
 
 data class LiveTvUiState(
     val status: LiveTvStatus = LiveTvStatus.LOADING,
+    /**
+     * The load state of the MATCHES grid, published independently of [status].
+     *
+     * The Partidos grid gates on THIS and the channel list on [status], because the two load on
+     * different schedules: the matches only need the addon's `sports-live` catalog, while the full
+     * channel list needs every TV catalog the installed addons publish. Gating both on one status
+     * would make Partidos wait for all of them -- the ~40 s cold load the owner measured.
+     */
+    val matchesStatus: LiveTvStatus = LiveTvStatus.LOADING,
     val channels: List<LiveTvChannelRow> = emptyList(),
     /**
      * Live sports matches, kept apart from [channels].

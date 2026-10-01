@@ -17,6 +17,7 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import android.content.Context
 import android.content.ContextWrapper
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPlayRequest
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
 import com.nuvio.tv.ext.livetv.ui.LiveTvScreen
 import com.nuvio.tv.ext.livetv.ui.LiveTvViewModel
 import com.nuvio.tv.ui.navigation.Screen
@@ -42,6 +43,19 @@ fun LiveTvRoute(navController: NavController) {
 
     LaunchedEffect(Unit) {
         viewModel.playRequests.collect { request -> fullscreenRequest = request }
+    }
+
+    // The channel list loads on its own schedule now: Partidos may have loaded first (or the addon
+    // read may not have happened at all), so entering TV en vivo over an unloaded list runs the full
+    // refresh here. The condition reads "the full list was never loaded": status stays LOADING until
+    // a full refresh publishes, and the matches fast path's contract is to never touch it. (Gating on
+    // "status is not LOADING" instead would dead-end after a Partidos-only load and reload-loop after
+    // a full load that ended EMPTY.) The view model drops concurrent refresh calls, so re-entering
+    // while one is running costs nothing.
+    LaunchedEffect(state.channels.isEmpty(), state.status) {
+        if (state.channels.isEmpty() && state.status == LiveTvStatus.LOADING) {
+            viewModel.refresh()
+        }
     }
 
     LiveTvScreen(

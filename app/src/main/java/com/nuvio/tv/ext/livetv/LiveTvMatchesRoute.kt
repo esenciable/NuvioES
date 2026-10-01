@@ -39,6 +39,14 @@ fun LiveTvMatchesRoute(navController: NavController) {
         viewModel.playRequests.collect { request -> fullscreenRequest = request }
     }
 
+    // Partidos loads on its own fast path: only the sports-live catalog, never the ~57 TV catalogs
+    // the channel list needs. LaunchedEffect(Unit) runs once per composition (recompositions do not
+    // re-fire it), and the view model skips the re-load when matches are already published, so
+    // navigating away and back costs at most one catalog read.
+    LaunchedEffect(Unit) {
+        viewModel.refreshMatchesOnly()
+    }
+
     LiveTvMatchesScreen(
         state = state,
         fullscreenRequest = fullscreenRequest,

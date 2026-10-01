@@ -116,6 +116,8 @@ class LiveTvViewModel @Inject constructor(
     /** The last sport set written to the store, so repeated publishes do not hit it again. */
     private var lastKnownSportsWritten: Set<String> = emptySet()
     private var searchQuery: String = ""
+    /** Set while the full [refresh] runs, so a second trigger cannot stack two full loads. */
+    private var fullRefreshInFlight = false
     private var guide: EpgSnapshot = EpgSnapshot.EMPTY
     private var epgSources: List<EpgSource> = emptyList()
     private var disabledEpgSourceIds: Set<String> = emptySet()
@@ -129,7 +131,11 @@ class LiveTvViewModel @Inject constructor(
     private var hiddenCategoryIds: Set<String> = emptySet()
 
     init {
-        refresh()
+        // No full load here on purpose. Both destinations now trigger their own schedule: Partidos
+        // loads only the matches catalog (refreshMatchesOnly) and the channels screen runs the full
+        // refresh when it composes over an empty list. Loading all ~57 TV catalogs in init was the
+        // measured ~40 s cold start the owner complained about, and it also forced Partidos to wait
+        // for data it does not need.
         observeFocusedChannel()
         observeSettings()
     }
@@ -332,53 +338,149 @@ class LiveTvViewModel @Inject constructor(
     )
 
     fun refresh() {
+        // A full load is already walking every catalog; a second one would double the very request
+        // count this screen is being optimized against (re-entering the screen re-fires its trigger).
+        if (fullRefreshInFlight) return
+        fullRefreshInFlight = true
         viewModelScope.launch {
-            _state.update { it.copy(status = LiveTvStatus.LOADING, errorMessage = null) }
+            try {
+                _state.update { it.copy(status = LiveTvStatus.LOADING, errorMessage = null) }
 
-            val addons = runCatching { addonRepository.getInstalledAddons().first() }.getOrElse { failure ->
-                publish(
-                    status = LiveTvStatus.ERROR,
-                    message = failure.message ?: failure::class.java.simpleName
-                )
-                return@launch
-            }
+                val addons = runCatching { addonRepository.getInstalledAddons().first() }.getOrElse { failure ->
+                    publish(
+                        status = LiveTvStatus.ERROR,
+                        message = failure.message ?: failure::class.java.simpleName,
+                        matchesStatus = LiveTvStatus.ERROR
+                    )
+                    return@launch
+                }
 
-            catalogs = TvCatalogSelector.select(addons)
-            installedAddons = addons
-            // The channel set is about to change, so anything resolved for the old one is stale.
-            previewCache.clear()
-            _state.update { it.copy(preview = null, previewFailure = null) }
-            if (catalogs.isEmpty()) {
-                // The addons answered and none publishes live television. That is EMPTY, not an error:
-                // the reference fork showed "no channels found" for a network failure too, so the user
-                // could not tell an outage from an untouched setup.
-                channels = emptyList()
-                publish(status = LiveTvStatus.EMPTY, message = null)
-                return@launch
-            }
+                catalogs = TvCatalogSelector.select(addons)
+                installedAddons = addons
+                // The channel set is about to change, so anything resolved for the old one is stale.
+                previewCache.clear()
+                _state.update { it.copy(preview = null, previewFailure = null) }
+                if (catalogs.isEmpty()) {
+                    // The addons answered and none publishes live television. That is EMPTY, not an error:
+                    // the reference fork showed "no channels found" for a network failure too, so the user
+                    // could not tell an outage from an untouched setup.
+                    channels = emptyList()
+                    publish(status = LiveTvStatus.EMPTY, message = null, matchesStatus = LiveTvStatus.EMPTY)
+                    return@launch
+                }
 
-            val loaded = runCatching { channelLoader.load(catalogs) }.getOrElse { failure ->
-                channels = emptyList()
-                publish(
-                    status = LiveTvStatus.ERROR,
-                    message = failure.message ?: failure::class.java.simpleName
-                )
-                return@launch
-            }
+                val loaded = runCatching { channelLoader.load(catalogs) }.getOrElse { failure ->
+                    channels = emptyList()
+                    publish(
+                        status = LiveTvStatus.ERROR,
+                        message = failure.message ?: failure::class.java.simpleName,
+                        matchesStatus = LiveTvStatus.ERROR
+                    )
+                    return@launch
+                }
 
-            loadedChannels = loaded.channels
-            applyPartitionAndFilters()
-            publish(
+                loadedChannels = loaded.channels
+                applyPartitionAndFilters()
                 // A sports-only addon (or catalog) delivers nothing but rb_ events, so after the
                 // partition an empty TV list no longer means an empty screen: only when BOTH sides
                 // came back empty is there genuinely nothing to show.
-                status = if (channels.isEmpty() && matches.isEmpty()) LiveTvStatus.EMPTY else LiveTvStatus.READY,
-                message = null,
-                failedCatalogs = loaded.failedCatalogs
-            )
+                val outcome = if (channels.isEmpty() && matches.isEmpty()) LiveTvStatus.EMPTY else LiveTvStatus.READY
+                publish(
+                    status = outcome,
+                    message = null,
+                    failedCatalogs = loaded.failedCatalogs,
+                    // The matches view mirrors the full load's outcome, so after a full load the two
+                    // views can never disagree about what exists.
+                    matchesStatus = outcome
+                )
 
-            syncEpgSources()
+                syncEpgSources()
+            } finally {
+                fullRefreshInFlight = false
+            }
         }
+    }
+
+    /**
+     * Loads ONLY the matches side: the catalogs whose id carries the sports-live fragment, read and
+     * published on [LiveTvUiState.matchesStatus] alone.
+     *
+     * The Partidos section needs exactly one catalog (`esencial-play-sports-live`); waiting for the
+     * other ~56 TV catalogs was the ~40 s the owner measured on a cold start. Everything that belongs
+     * to the channel list -- its status, its rows, the preview cache, the EPG sync -- is deliberately
+     * left alone here: [refresh] owns those.
+     *
+     * [loadedChannels] IS updated with what this read: the settings observers recompute the matches
+     * from that raw load, so skipping it would wipe the grid the moment a sport (or the adult filter)
+     * is toggled after a Partidos-only load. The published channel view stays untouched, because only
+     * [publish] rebuilds it and this path never calls it.
+     */
+    fun refreshMatchesOnly() {
+        // Matches already on screen: re-entering Partidos must not re-hit the addon. ERROR is
+        // deliberately retried -- an error published no matches, and re-entering the section is the
+        // only retry it gets short of the full refresh.
+        when (_state.value.matchesStatus) {
+            LiveTvStatus.READY, LiveTvStatus.EMPTY -> return
+            else -> Unit
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(matchesStatus = LiveTvStatus.LOADING) }
+
+            val addons = runCatching { addonRepository.getInstalledAddons().first() }.getOrElse { failure ->
+                failMatchesWith(failure.message ?: failure::class.java.simpleName)
+                return@launch
+            }
+            installedAddons = addons
+            if (catalogs.isEmpty()) catalogs = TvCatalogSelector.select(addons)
+
+            val matchesCatalogs = catalogs.filter {
+                it.catalogId.contains(MATCHES_CATALOG_FRAGMENT, ignoreCase = true)
+            }
+            if (matchesCatalogs.isEmpty()) {
+                // The expected catalog is absent (the addon is not installed, or renamed it). Say EMPTY
+                // instead of falling back to every catalog: that fallback would erase the fast path this
+                // function exists for, and the channels screen's own trigger still runs the full load,
+                // which republishes the matches with everything in them.
+                publishMatches(status = LiveTvStatus.EMPTY, matches = emptyList())
+                return@launch
+            }
+
+            val loaded = runCatching { channelLoader.load(matchesCatalogs) }.getOrElse { failure ->
+                failMatchesWith(failure.message ?: failure::class.java.simpleName)
+                return@launch
+            }
+
+            // A full refresh that started (or finished) while this load ran owns the channel fields;
+            // dropping our partial result keeps loadedChannels from shrinking behind its back, and the
+            // full load republishes the matches itself.
+            if (fullRefreshInFlight || _state.value.status != LiveTvStatus.LOADING) return@launch
+
+            loadedChannels = loaded.channels
+            // The same two filters the full load runs, in the same order: the matches grid can never
+            // disagree with the settings just because it loaded through the fast path.
+            val filtered = if (hideAdultChannels) {
+                loadedChannels.filterNot(AdultChannelFilter::isAdult)
+            } else {
+                loadedChannels
+            }
+            val partition = LiveTvPartition.split(filtered)
+            rememberKnownSports(partition.matches)
+            val enabled = LiveTvSports.enabled(partition.matches, disabledSports)
+            matches = enabled
+            publishMatches(
+                status = if (enabled.isEmpty()) LiveTvStatus.EMPTY else LiveTvStatus.READY,
+                matches = enabled
+            )
+        }
+    }
+
+    /** Publishes only the matches slice; the channel view is [refresh]'s to rebuild. */
+    private fun publishMatches(status: LiveTvStatus, matches: List<LiveTvChannel>) {
+        _state.update { it.copy(matches = matches, matchesStatus = status) }
+    }
+
+    private fun failMatchesWith(message: String) {
+        _state.update { it.copy(matchesStatus = LiveTvStatus.ERROR, errorMessage = message) }
     }
 
     /**
@@ -681,14 +783,24 @@ class LiveTvViewModel @Inject constructor(
         else _state.update { it.copy(playFailure = failure) }
     }
 
-    private companion object
+    private companion object {
+        /**
+         * The id fragment that identifies the matches catalog(s) (`esencial-play-sports-live`). A
+         * substring match, not an exact id: the addon may publish variants, and the fast path's whole
+         * point is to read every matches catalog and nothing else.
+         */
+        const val MATCHES_CATALOG_FRAGMENT = "sports-live"
+
+    }
     // The fixed per-press dead-channel bound (MAX_ZAP_SKIPS = 3) lived here. It is gone: see [zap]
     // for the device-reported stranding it caused and the full-pass walk that replaced it.
 
     private fun publish(
         status: LiveTvStatus,
         message: String?,
-        failedCatalogs: Int = 0
+        failedCatalogs: Int = 0,
+        /** The outcome the matches view should mirror; null leaves its current status alone. */
+        matchesStatus: LiveTvStatus? = null
     ) {
         val aliases = emptyMap<String, String>()
         // Category and search both run HERE, in the single place the visible channel set is decided.
@@ -714,6 +826,7 @@ class LiveTvViewModel @Inject constructor(
         _state.update { current ->
             current.copy(
                 status = status,
+                matchesStatus = matchesStatus ?: current.matchesStatus,
                 channels = rows,
                 matches = matches,
                 categories = categories,
