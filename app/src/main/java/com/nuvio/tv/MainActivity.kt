@@ -52,6 +52,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SportsSoccer
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -1012,6 +1013,7 @@ open class MainActivity : ComponentActivity() {
                         buildSet {
                             add(Screen.Home.route)
                             add(Screen.LiveTv.route)
+                            add(Screen.LiveTvMatches.route)
                             add(Screen.Search.route)
                             add(Screen.Library.route)
                             add(Screen.Settings.route)
@@ -1023,6 +1025,7 @@ open class MainActivity : ComponentActivity() {
 
                     val strNavHome = stringResource(R.string.nav_home)
                     val strNavLiveTv = stringResource(R.string.nav_live_tv)
+                    val strNavMatches = stringResource(R.string.live_tv_matches_section)
                     val strNavDiscover = stringResource(R.string.nav_discover)
                     val strNavSearch = stringResource(R.string.nav_search)
                     val strNavLibrary = stringResource(R.string.nav_library)
@@ -1030,6 +1033,7 @@ open class MainActivity : ComponentActivity() {
                     val drawerItems = remember(
                         strNavHome,
                         strNavLiveTv,
+                        strNavMatches,
                         strNavDiscover,
                         strNavSearch,
                         strNavLibrary,
@@ -1050,6 +1054,14 @@ open class MainActivity : ComponentActivity() {
                                     route = Screen.LiveTv.route,
                                     label = strNavLiveTv,
                                     icon = Icons.Default.Tv
+                                )
+                            )
+                            // ---- NuvioES hook: Partidos sidebar entry ----
+                            add(
+                                DrawerItem(
+                                    route = Screen.LiveTvMatches.route,
+                                    label = strNavMatches,
+                                    icon = Icons.Default.SportsSoccer
                                 )
                             )
                             if (discoverLocation == DiscoverLocation.IN_SIDEBAR) {

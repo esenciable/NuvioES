@@ -30,4 +30,14 @@ enum class LiveTvPlayFailure {
  */
 interface LiveTvStreamResolver {
     suspend fun resolve(addon: Addon, channel: LiveTvChannel): LiveTvPlayableStream?
+
+    /**
+     * Every stream of the channel that carries a usable URL, in the addon's own order.
+     *
+     * Deliberately the addon's order and not a re-ranking: the addon already ordered its sources by
+     * priority, and re-sorting them here would mean guessing what it knows. Empty (never null) when the
+     * addon could not be reached or answered without usable streams, so callers can treat "nothing"
+     * uniformly.
+     */
+    suspend fun resolveAll(addon: Addon, channel: LiveTvChannel): List<LiveTvPlayableStream>
 }

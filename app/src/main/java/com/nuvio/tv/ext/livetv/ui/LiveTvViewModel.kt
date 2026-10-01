@@ -16,6 +16,7 @@ import com.nuvio.tv.ext.livetv.data.epg.EpgSyncResult
 import com.nuvio.tv.ext.livetv.domain.AdultChannelFilter
 import com.nuvio.tv.ext.livetv.domain.EpgSourceDiscovery
 import com.nuvio.tv.ext.livetv.domain.LiveTvCatalog
+import com.nuvio.tv.ext.livetv.domain.LiveTvPartition
 import com.nuvio.tv.ext.livetv.domain.LiveTvRows
 import com.nuvio.tv.ext.livetv.domain.LiveTvZapping
 import com.nuvio.tv.ext.livetv.domain.TvCatalogSelector
@@ -27,6 +28,7 @@ import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannelRow
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPlayRequest
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPreview
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvSourcePicker
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayFailure
 import com.nuvio.tv.ext.livetv.domain.LiveTvPlayableStream
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvStatus
@@ -101,6 +103,12 @@ class LiveTvViewModel @Inject constructor(
     private var loadedChannels: List<LiveTvChannel> = emptyList()
     /** What every consumer sees: list, preview and playback all read this one, already filtered. */
     private var channels: List<LiveTvChannel> = emptyList()
+    /**
+     * The live matches the addon shipped inside the channel catalogs, partitioned out of [channels].
+     * Kept raw and in the addon's own delivery order -- the matches view has its own simple layout, and
+     * that order is live/priority order. See [LiveTvPartition] for why the split exists.
+     */
+    private var matches: List<LiveTvChannel> = emptyList()
     private var hideAdultChannels: Boolean = true
     private var searchQuery: String = ""
     private var guide: EpgSnapshot = EpgSnapshot.EMPTY
@@ -257,7 +265,7 @@ class LiveTvViewModel @Inject constructor(
             return
         }
 
-        val channel = channels.firstOrNull { it.stableKey == stableKey } ?: return
+        val channel = findChannel(stableKey) ?: return
         val addon = installedAddons.firstOrNull { it.baseUrl == channel.addonBaseUrl }
             ?: return failPreviewWith(LiveTvPlayFailure.RESOLVE_FAILED)
 
@@ -316,7 +324,10 @@ class LiveTvViewModel @Inject constructor(
             loadedChannels = loaded.channels
             applyAdultFilter()
             publish(
-                status = if (channels.isEmpty()) LiveTvStatus.EMPTY else LiveTvStatus.READY,
+                // A sports-only addon (or catalog) delivers nothing but rb_ events, so after the
+                // partition an empty TV list no longer means an empty screen: only when BOTH sides
+                // came back empty is there genuinely nothing to show.
+                status = if (channels.isEmpty() && matches.isEmpty()) LiveTvStatus.EMPTY else LiveTvStatus.READY,
                 message = null,
                 failedCatalogs = loaded.failedCatalogs
             )
@@ -378,11 +389,17 @@ class LiveTvViewModel @Inject constructor(
      * places and still leaked through the handoff to the fullscreen player.
      */
     private fun applyAdultFilter() {
-        channels = if (hideAdultChannels) {
+        val filtered = if (hideAdultChannels) {
             loadedChannels.filterNot(AdultChannelFilter::isAdult)
         } else {
             loadedChannels
         }
+        // The partition runs AFTER the adult filter, on the already-filtered set, so a match can no
+        // more reach the UI through the matches view than a channel can through the list. Everything
+        // downstream of this point sees a channel list with NO rb_ event in it.
+        val partition = LiveTvPartition.split(filtered)
+        channels = partition.channels
+        matches = partition.matches
     }
 
     /**
@@ -426,36 +443,136 @@ class LiveTvViewModel @Inject constructor(
     }
 
     /**
+     * Finds a channel or a match by its stable key, across both sides of the partition.
+     *
+     * Matches live outside [channels] now, but they resolve and play through the exact same addon
+     * endpoint -- a match is just another `tv` id to the addon. Blocking rb_ ids here would strand the
+     * matches view with buttons that do nothing, so the lookup deliberately covers both lists.
+     */
+    private fun findChannel(stableKey: String): LiveTvChannel? =
+        channels.firstOrNull { it.stableKey == stableKey }
+            ?: matches.firstOrNull { it.stableKey == stableKey }
+
+    /**
      * Resolves the channel's stream and asks the screen to open the player.
+     *
+     * [preResolvedSources] lets a caller that already resolved the full source list (the matches view
+     * and its source picker) hand it in instead of forcing a second addon request; when null, this
+     * resolves here through [resolveAll], whose first entry is exactly what the old single-stream
+     * [resolve] returned, so the channel flow is unchanged. [sourceIndex] selects which of the sources
+     * actually plays -- the picker's answer.
      *
      * Failures are typed and surfaced, not swallowed: an addon that answers with no usable URL and an
      * addon that cannot be reached look the same to a user staring at a screen that did nothing.
      */
-    fun playChannel(stableKey: String, onResolveFailure: (() -> Unit)? = null) {
-        val channel = channels.firstOrNull { it.stableKey == stableKey } ?: return
+    fun playChannel(
+        stableKey: String,
+        preResolvedSources: List<LiveTvPlayableStream>? = null,
+        sourceIndex: Int = 0,
+        onResolveFailure: (() -> Unit)? = null
+    ) {
+        val channel = findChannel(stableKey) ?: return
         val addon = installedAddons.firstOrNull { it.baseUrl == channel.addonBaseUrl }
             ?: return failWith(LiveTvPlayFailure.RESOLVE_FAILED, onResolveFailure)
 
         viewModelScope.launch {
             _state.update { it.copy(resolvingChannelKey = stableKey, playFailure = null) }
 
-            val stream = runCatching { streamResolver.resolve(addon, channel) }
-                .getOrNull()
+            val sources = preResolvedSources
+                ?: runCatching { streamResolver.resolveAll(addon, channel) }.getOrNull()
 
             _state.update { it.copy(resolvingChannelKey = null) }
 
-            if (stream == null) {
+            if (sources.isNullOrEmpty()) {
                 failWith(LiveTvPlayFailure.NO_STREAMS, onResolveFailure)
                 return@launch
             }
 
-            // What the fullscreen player is on is also what focus reports, so the next zap starts from
-            // the channel that is actually playing rather than from wherever the list was left.
-            previewCache.put(stableKey, stream)
-            _focusedChannel.value = stableKey
-            _state.update { it.copy(isFullscreen = true) }
-            _playRequests.send(LiveTvPlayRequest(channel = channel, stream = stream, attempt = ++playAttempt))
+            startPlayback(channel, sources, sourceIndex.coerceIn(sources.indices))
         }
+    }
+
+    /**
+     * A match card was clicked: resolve EVERY source, then either play or offer the picker.
+     *
+     * Exactly one source plays directly -- asking a user to choose between one option is a wasted
+     * click. More than one stops at the picker, because the addon's priority order is a hint, not a
+     * guarantee, and a sports event's second source is sometimes the only working one.
+     */
+    fun onMatchClicked(stableKey: String) {
+        val channel = findChannel(stableKey) ?: return
+        val addon = installedAddons.firstOrNull { it.baseUrl == channel.addonBaseUrl }
+            ?: return failWith(LiveTvPlayFailure.RESOLVE_FAILED)
+
+        viewModelScope.launch {
+            _state.update { it.copy(resolvingChannelKey = stableKey, playFailure = null) }
+            val sources = runCatching { streamResolver.resolveAll(addon, channel) }.getOrDefault(emptyList())
+            _state.update { it.copy(resolvingChannelKey = null) }
+
+            when {
+                sources.isEmpty() -> failWith(LiveTvPlayFailure.NO_STREAMS)
+                sources.size == 1 -> startPlayback(channel, sources, 0)
+                else -> _state.update { it.copy(sourcePicker = LiveTvSourcePicker(channel, sources)) }
+            }
+        }
+    }
+
+    /** The user chose a row of the source picker; play THAT source in fullscreen. */
+    fun pickSource(index: Int) {
+        val picker = _state.value.sourcePicker ?: return
+        _state.update { it.copy(sourcePicker = null) }
+        viewModelScope.launch {
+            startPlayback(picker.channel, picker.sources, index.coerceIn(picker.sources.indices))
+        }
+    }
+
+    /** Back on the source picker: dismiss it and stay exactly where the user was. */
+    fun dismissSourcePicker() {
+        _state.update { it.copy(sourcePicker = null) }
+    }
+
+    /**
+     * Auto-advance: the source at [LiveTvPlayRequest.sourceIndex] fatally failed and further sources
+     * exist, so open the next one. Bounded by the request's own source list -- the index strictly
+     * grows, so this cannot loop -- and it reuses the already-resolved list rather than re-asking the
+     * addon, because the failure was in the STREAM, not in the resolution.
+     */
+    fun advanceSource(request: LiveTvPlayRequest) {
+        val next = request.sourceIndex + 1
+        if (next >= request.sources.size) return
+        viewModelScope.launch {
+            _playRequests.send(
+                LiveTvPlayRequest(
+                    channel = request.channel,
+                    stream = request.sources[next],
+                    sources = request.sources,
+                    sourceIndex = next,
+                    attempt = ++playAttempt
+                )
+            )
+        }
+    }
+
+    /**
+     * The one path into fullscreen playback. Everything the user can click or auto-advance lands here,
+     * so "what is playing" can never disagree between the list, the picker and the error overlay.
+     */
+    private suspend fun startPlayback(channel: LiveTvChannel, sources: List<LiveTvPlayableStream>, sourceIndex: Int) {
+        val stream = sources[sourceIndex]
+        // What the fullscreen player is on is also what focus reports, so the next zap starts from
+        // the channel that is actually playing rather than from wherever the list was left.
+        previewCache.put(channel.stableKey, stream)
+        _focusedChannel.value = channel.stableKey
+        _state.update { it.copy(isFullscreen = true) }
+        _playRequests.send(
+            LiveTvPlayRequest(
+                channel = channel,
+                stream = stream,
+                sources = sources,
+                sourceIndex = sourceIndex,
+                attempt = ++playAttempt
+            )
+        )
     }
 
     /**
@@ -470,7 +587,7 @@ class LiveTvViewModel @Inject constructor(
      * has nothing to show, and staying there with the overlay dismissed would be a black dead end.
      */
     fun retryChannel(stableKey: String) {
-        val channel = channels.firstOrNull { it.stableKey == stableKey } ?: return
+        val channel = findChannel(stableKey) ?: return
         val addon = installedAddons.firstOrNull { it.baseUrl == channel.addonBaseUrl }
             ?: return exitFullscreenWith(LiveTvPlayFailure.RESOLVE_FAILED)
 
@@ -530,6 +647,7 @@ class LiveTvViewModel @Inject constructor(
             current.copy(
                 status = status,
                 channels = rows,
+                matches = matches,
                 categories = categories,
                 selectedCategory = selectedCategory,
                 searchQuery = searchQuery,

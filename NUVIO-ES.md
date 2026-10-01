@@ -30,7 +30,7 @@ semanas. Por eso:
 | Métrica | Límite | Verificado por |
 | --- | --- | --- |
 | Archivos de upstream modificados | **≤ 5** | `nuvioes/check-conflict-budget.sh` (falla el build) |
-| Líneas enganchadas en archivos de upstream | **≤ 60** | ídem |
+| Líneas enganchadas en archivos de upstream | **≤ 80** | techo subido 2026-10-01 con aprobación del dueño: sección **Partidos** propia en el riel (74 líneas medidas) |
 | Dependencias nuevas en `:app` | **0** | revisión |
 | Binarios vendorizados | **0** | revisión |
 | Credenciales en el repositorio | **0** | gitleaks en CI |
@@ -214,7 +214,8 @@ Todo lo de abajo se probó en un **Android TV arm64** con el addon del dueño in
 | Qué | Estado | Evidencia |
 | --- | --- | --- |
 | Entrada en el sidebar + ruta propia | ✅ | 4 enganches, 33/40 líneas (F1) |
-| Ajustes de la feature dentro de la pantalla de Ajustes | ✅ | 5 enganches, **51/60 líneas** (F6 T3) |
+| Ajustes de la feature dentro de la pantalla de Ajustes | ✅ | 5 enganches, **51 líneas** (F6 T3) |
+| **Sección Partidos** en el riel lateral | ✅ | destino propio `livetv_matches` (Screen/NavHost/MainActivity, 74/80 líneas); partidos separados de los canales; fuentes múltiples con selector y auto-avance |
 | Canales desde los addons instalados | ✅ | **1170 canales**, catálogos `type: tv` |
 | Guía EPG derivada del addon, sin configurar nada | ✅ | **13152 programas**, títulos reales |
 | Emparejamiento estricto canal↔guía | ✅ | por id, alias, nombre normalizado único |

@@ -98,6 +98,12 @@ fun LiveTvScreen(
     onManageAddons: () -> Unit,
     onRetry: () -> Unit,
     onPlayChannel: (String) -> Unit,
+    /** A row of the source picker was chosen; play that source. */
+    onPickSource: (Int) -> Unit,
+    /** Back on the source picker: dismiss it. */
+    onDismissSourcePicker: () -> Unit,
+    /** Auto-advance: the fullscreen player's source fatally failed; open the next one. */
+    onAdvanceSource: (LiveTvPlayRequest) -> Unit,
     onChannelFocused: (String) -> Unit,
     onSetAdultFilter: (Boolean) -> Unit,
     onSearchQuery: (String) -> Unit,
@@ -185,6 +191,7 @@ fun LiveTvScreen(
                 channels = state.channels,
                 onZapTo = onPlayChannel,
                 onRetry = { onRetryChannel(request.channel.stableKey) },
+                onAdvanceSource = onAdvanceSource,
                 onPrevious = onPreviousChannel,
                 onNext = onNextChannel,
                 onExit = onExitFullscreen
@@ -225,6 +232,16 @@ fun LiveTvScreen(
                 onSearchQuery = onSearchQuery
             )
         }
+        }
+
+        // The source picker floats over whichever view is underneath (it only appears before playback
+        // opens fullscreen) and owns Back while it is up, via its own handler.
+        state.sourcePicker?.let { picker ->
+            LiveTvSourcePicker(
+                picker = picker,
+                onPick = onPickSource,
+                onDismiss = onDismissSourcePicker
+            )
         }
     }
 }
@@ -379,9 +396,9 @@ private fun ChannelList(
 
         Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
 
-        // The category slider sits directly above the list, so UP from the first channel row reaches it
-        // and DOWN from a chip goes back into the list. It is never given entry focus: the list keeps
-        // that, because watching a channel is what the user came for.
+        // The category slider sits directly above the list, so UP from the first channel row reaches
+        // it and DOWN from a chip goes back into the list. It is never given entry focus: the list
+        // keeps that, because watching a channel is what the user came for.
         LiveTvCategorySlider(
             categories = LiveTvRows.visibleCategoriesFor(state.categories, state.hiddenCategoryIds),
             selectedCategory = state.selectedCategory,

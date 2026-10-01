@@ -67,6 +67,17 @@ enum class LiveTvStatus {
 data class LiveTvUiState(
     val status: LiveTvStatus = LiveTvStatus.LOADING,
     val channels: List<LiveTvChannelRow> = emptyList(),
+    /**
+     * Live sports matches, kept apart from [channels].
+     *
+     * The addon delivers matches inside the same `tv` catalogs as real channels (ids prefixed `rb_`),
+     * so the partition runs in the ViewModel before anything downstream sees the list: [channels] must
+     * contain NO match, or zapping, categories, search and the parental filter would step onto events
+     * that are not channels. This list is raw -- unfiltered by category or search -- because the
+     * matches view is a flat, simple layout, and it keeps the addon's own delivery order, which is
+     * live/priority order.
+     */
+    val matches: List<LiveTvChannel> = emptyList(),
     val categories: List<LiveTvCategory> = emptyList(),
     val selectedCategory: LiveTvCategoryId = LiveTvCategoryId.All,
     /**
@@ -125,7 +136,26 @@ data class LiveTvUiState(
     val preview: LiveTvPreview? = null,
     /** Why the preview is empty when it should not be. */
     val previewFailure: LiveTvPlayFailure? = null,
+    /**
+     * The source picker waiting for the user's choice, when a channel or match resolved to MORE than
+     * one stream. Null means there is nothing to choose: the play pipeline either went straight to the
+     * single source or already opened the player. It is an event-shaped piece of state -- set by the
+     * resolver, cleared the moment a source is picked or Back dismisses it -- and never published by
+     * [publish], which only rebuilds the channel view around it.
+     */
+    val sourcePicker: LiveTvSourcePicker? = null,
     val errorMessage: String? = null
+)
+
+/**
+ * A resolved channel with more than one usable source, offered to the user in the addon's own order.
+ *
+ * The sources are kept as resolved -- no re-ranking -- because the addon already ordered them by
+ * priority, and the picker's rows must match what auto-advance will later walk through.
+ */
+data class LiveTvSourcePicker(
+    val channel: LiveTvChannel,
+    val sources: List<LiveTvPlayableStream>
 )
 
 /**
@@ -137,6 +167,16 @@ data class LiveTvUiState(
 data class LiveTvPlayRequest(
     val channel: LiveTvChannel,
     val stream: LiveTvPlayableStream,
+    /**
+     * Every usable source of the channel, in the addon's own priority order, with [stream] sitting at
+     * [sourceIndex]. The fullscreen surface walks this list forward on a fatal playback error
+     * (auto-advance) before showing the error overlay, so a match with three dead first sources and a
+     * working third one still plays. Empty for requests built without a full resolution -- zapping and
+     * the manual retry resolve one stream at a time -- and an empty list simply disables auto-advance.
+     */
+    val sources: List<LiveTvPlayableStream> = emptyList(),
+    /** The position in [sources] of [stream]. Meaningful only when [sources] is not empty. */
+    val sourceIndex: Int = 0,
     /**
      * Which playback attempt this is. A retry that re-resolves the SAME stream must still count as a
      * new request: the collector keys work off the request object, and an equal one would be ignored,

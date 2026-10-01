@@ -89,6 +89,8 @@ internal fun LiveTvFullscreenSurface(
     channels: List<LiveTvChannelRow>,
     onZapTo: (String) -> Unit,
     onRetry: () -> Unit,
+    /** Auto-advance: the playing source fatally failed and the request carries further sources. */
+    onAdvanceSource: (LiveTvPlayRequest) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onExit: () -> Unit,
@@ -132,12 +134,29 @@ internal fun LiveTvFullscreenSurface(
 
     // One listener for the screen's player. Removed with the composition so a disposed surface never
     // writes into a state nobody is reading.
-    DisposableEffect(liveTvPlayer, request.stream.url) {
+    //
+    // Keyed on the WHOLE request, not on request.stream.url as it once was: auto-advance can hand the
+    // player a next source with the SAME url as the dead one, and a url-keyed effect would not
+    // re-register -- leaving the old closure in place, whose stale sourceIndex would advance to the
+    // same source again, forever. Keying on the request makes the closure and the request agree.
+    DisposableEffect(liveTvPlayer, request) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                playbackError = error
-                // The error overlay owns the screen from here; a cover underneath it would only fight it.
-                firstFrameRendered = true
+                // Auto-advance FIRST, overlay LAST. Ordering rationale: per-source HTTP retries live
+                // in LiveTvLoadErrorHandlingPolicy -- the finest level, hammering ONE url while the
+                // playlist is merely stale. Moving to the addon's next source is one coarser level
+                // above them: it only happens once THIS source is fatally dead, and only while the
+                // request carries further sources. The error overlay is the last resort, shown only
+                // when the whole resolved list is exhausted. Bounded by that list -- the index
+                // strictly grows inside the view model -- so this cannot loop.
+                if (request.sourceIndex + 1 < request.sources.size) {
+                    onAdvanceSource(request)
+                } else {
+                    playbackError = error
+                    // The error overlay owns the screen from here; a cover underneath it would only
+                    // fight it.
+                    firstFrameRendered = true
+                }
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -181,12 +200,25 @@ internal fun LiveTvFullscreenSurface(
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (event.key) {
                     Key.DirectionUp, Key.PageUp -> {
+                        // With the drawer open these keys belong to IT: they move focus down the list,
+                        // exactly like the main channel panel, and nothing plays until a row is
+                        // clicked. Returning false lets the focus system move focus; consuming here
+                        // would zap on every step -- the defect the fork's own `if (!isDrawerOpen)`
+                        // guard prevents.
+                        if (drawerOpen) return@onKeyEvent false
+                        // Zapping belongs to CHANNEL playback: a match is not in the channel partition,
+                        // so the matches route plays with an empty `channels` and there is no list the
+                        // UP/DOWN keys could walk -- consuming them here would press buttons that do
+                        // nothing, and the surface never ships a dead stop.
+                        if (channels.isEmpty()) return@onKeyEvent false
                         hudTouch++
                         onPrevious()
                         true
                     }
 
                     Key.DirectionDown, Key.PageDown -> {
+                        if (drawerOpen) return@onKeyEvent false
+                        if (channels.isEmpty()) return@onKeyEvent false
                         hudTouch++
                         onNext()
                         true
@@ -196,14 +228,18 @@ internal fun LiveTvFullscreenSurface(
                     // the list rows (nothing focusable sits beside the drawer), so the same handler
                     // closes it again -- one code path for open and close.
                     Key.DirectionLeft, Key.DirectionRight -> {
+                        // The drawer lists channels; a match plays with none (see the UP/DOWN guard),
+                        // so LEFT/RIGHT open nothing where there is no channel context.
+                        if (channels.isEmpty()) return@onKeyEvent false
                         drawerOpen = !drawerOpen
                         if (drawerOpen) hudVisible = false else hudTouch++
                         true
                     }
 
-                    // OK is Reintentar while a failure is on screen. Consumed there so the request
-                    // cannot leak into whatever else is composed; outside a failure it stays free.
+                    // OK while the drawer is open belongs to the focused row (its click). The surface
+                    // only answers OK when no drawer is up.
                     Key.DirectionCenter, Key.Enter -> {
+                        if (drawerOpen) return@onKeyEvent false
                         if (playbackError != null || resolveFailed) {
                             onRetry()
                             true
@@ -265,6 +301,15 @@ internal fun LiveTvFullscreenSurface(
             FullscreenHud(
                 channelName = request.channel.name,
                 programmeTitle = programmeTitle,
+                // The hint must say what the keys DO here: with no channel context, zapping is gated
+                // off, so the line that promises "change channel" would be a lie.
+                hint = stringResource(
+                    if (channels.isEmpty()) {
+                        R.string.live_tv_fullscreen_hint_match
+                    } else {
+                        R.string.live_tv_fullscreen_hint
+                    }
+                ),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
@@ -293,6 +338,7 @@ internal fun LiveTvFullscreenSurface(
 private fun FullscreenHud(
     channelName: String,
     programmeTitle: String?,
+    hint: String,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xxs)) {
@@ -311,7 +357,7 @@ private fun FullscreenHud(
             )
         }
         Text(
-            text = stringResource(R.string.live_tv_fullscreen_hint),
+            text = hint,
             style = MaterialTheme.typography.labelMedium,
             color = Color.White.copy(alpha = 0.7f)
         )

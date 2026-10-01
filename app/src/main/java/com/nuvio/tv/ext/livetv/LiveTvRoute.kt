@@ -2,16 +2,20 @@
 
 package com.nuvio.tv.ext.livetv
 
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.tv.material3.ExperimentalTvMaterial3Api
+import android.content.Context
+import android.content.ContextWrapper
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvPlayRequest
 import com.nuvio.tv.ext.livetv.ui.LiveTvScreen
 import com.nuvio.tv.ext.livetv.ui.LiveTvViewModel
@@ -32,7 +36,7 @@ import com.nuvio.tv.ui.navigation.Screen
  */
 @Composable
 fun LiveTvRoute(navController: NavController) {
-    val viewModel: LiveTvViewModel = hiltViewModel()
+    val viewModel: LiveTvViewModel = activityScopedLiveTvViewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
     var fullscreenRequest by remember { mutableStateOf<LiveTvPlayRequest?>(null) }
 
@@ -47,6 +51,9 @@ fun LiveTvRoute(navController: NavController) {
         onManageAddons = { navController.navigate(Screen.AddonManager.route) },
         onRetry = viewModel::refresh,
         onPlayChannel = viewModel::playChannel,
+        onPickSource = viewModel::pickSource,
+        onDismissSourcePicker = viewModel::dismissSourcePicker,
+        onAdvanceSource = viewModel::advanceSource,
         onChannelFocused = viewModel::onChannelFocused,
         onSetAdultFilter = viewModel::setAdultFilter,
         onSearchQuery = viewModel::setSearchQuery,
@@ -62,3 +69,28 @@ fun LiveTvRoute(navController: NavController) {
         }
     )
 }
+
+/**
+ * The ONE [LiveTvViewModel] for the whole feature, scoped to the activity.
+ *
+ * Live TV and Partidos are two destinations over the same feature, and the heavy loading (catalogs,
+ * EPG) must not run twice just because the user moved between them. Scoping to the activity makes
+ * the instance outlive both screens; a navigation-scoped `hiltViewModel()` would build a second one
+ * per destination and the two views would disagree about what is playing.
+ *
+ * The unwrapping walk matters because Compose can hand a wrapped context to composables -- a bare
+ * `as ComponentActivity` cast would throw there instead of finding the activity the context wraps.
+ * The navigation-scoped fallback keeps the route composable in any context without one (previews).
+ */
+@Composable
+internal fun activityScopedLiveTvViewModel(): LiveTvViewModel {
+    val activity = LocalContext.current.findComponentActivity()
+    return if (activity != null) hiltViewModel(activity) else hiltViewModel()
+}
+
+private tailrec fun Context.findComponentActivity(): ComponentActivity? =
+    when (this) {
+        is ComponentActivity -> this
+        is ContextWrapper -> baseContext.findComponentActivity()
+        else -> null
+    }

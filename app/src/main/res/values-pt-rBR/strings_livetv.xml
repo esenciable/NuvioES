@@ -42,10 +42,16 @@
     <string name="live_tv_category_favorites">Favoritos</string>
     <string name="live_tv_view_grid">Guia</string>
     <string name="live_tv_fullscreen_hint">Cima / Baixo: trocar de canal · Voltar: sair</string>
+    <string name="live_tv_fullscreen_hint_match">Voltar: sair</string>
     <string name="live_tv_fullscreen_error">Não foi possível reproduzir este canal</string>
     <string name="live_tv_fullscreen_error_hint">OK para tentar de novo · Cima/Baixo para mudar de canal</string>
 
     <string name="live_tv_search_hint">Buscar canais</string>
     <string name="live_tv_search_clear">Limpar busca</string>
     <string name="live_tv_search_no_results">Nenhum canal corresponde à busca</string>
+
+    <string name="live_tv_matches_section">Partidas</string>
+    <string name="live_tv_matches_empty">Não há partidas ao vivo agora</string>
+    <string name="live_tv_source_picker_title">Escolha uma fonte</string>
+    <string name="live_tv_source_fallback">Fonte %1$d</string>
 </resources>

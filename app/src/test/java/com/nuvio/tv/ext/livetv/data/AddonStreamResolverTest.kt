@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AddonStreamResolverTest {
@@ -112,6 +113,58 @@ class AddonStreamResolverTest {
             assertEquals(1, repository.calls.size)
             assertEquals("tv", repository.calls.single().second)
             assertEquals("cyx_123", repository.calls.single().third)
+        }
+    }
+
+    @Test
+    fun `resolveAll returns every usable stream in the addon's own order`() {
+        runTest {
+            val repository = FakeStreamRepository(
+                NetworkResult.Success(
+                    listOf(
+                        stream(url = "https://cdn.test/one.m3u8"),
+                        stream(url = "https://cdn.test/two.m3u8"),
+                        stream(url = "https://cdn.test/three.m3u8")
+                    )
+                )
+            )
+
+            val resolved = AddonStreamResolver(repository).resolveAll(addon(), channel())
+
+            assertEquals(
+                listOf("https://cdn.test/one.m3u8", "https://cdn.test/two.m3u8", "https://cdn.test/three.m3u8"),
+                resolved.map { it.url }
+            )
+        }
+    }
+
+    @Test
+    fun `resolveAll drops blank-url entries and keeps the rest in order`() {
+        runTest {
+            val repository = FakeStreamRepository(
+                NetworkResult.Success(
+                    listOf(
+                        stream(url = "   "),
+                        stream(url = "https://cdn.test/two.m3u8"),
+                        stream(url = null, externalUrl = null),
+                        stream(url = "https://cdn.test/four.m3u8")
+                    )
+                )
+            )
+
+            assertEquals(
+                listOf("https://cdn.test/two.m3u8", "https://cdn.test/four.m3u8"),
+                AddonStreamResolver(repository).resolveAll(addon(), channel()).map { it.url }
+            )
+        }
+    }
+
+    @Test
+    fun `resolveAll returns empty when the addon answers with an error`() {
+        runTest {
+            val repository = FakeStreamRepository(NetworkResult.Error("boom"))
+
+            assertTrue(AddonStreamResolver(repository).resolveAll(addon(), channel()).isEmpty())
         }
     }
 

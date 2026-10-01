@@ -58,6 +58,12 @@ construir: de dónde salen los partidos, qué card, y qué reproductor para mult
 - T5 — ya existe: `probe-channels.ts` + `live-health.ts` sondean los canales dentro del
   contenedor y el servidor oculta los muertos confirmados en DOS pasadas. Falta correrlo, no
   construirlo.
-- T4 — exploración lista: el addon ya publica la familia de deportes (catálogo
-  `esencial-play-sports-live` type tv, metas con SVG broadcast de escudos, streams múltiples
-  ordenados por prioridad). Propuesta presentada al dueño; decisión pendiente.
+- T4 — **HECHA** en tres fases delegadas (writer) + verificación del padre:
+  - Fase datos: `LiveTvPartition` (rb_ fuera de la lista de canales), `resolveAll` (todas las
+    fuentes en orden del addon), 164 tests.
+  - Fase UI in-screen: grilla + selector de fuentes + auto-avance acotado por el request.
+  - Fase sección propia (decisión del dueño: "en su propia sección, no dentro de tv en vivo"):
+    destino `livetv_matches` en el riel lateral, ViewModel compartido por actividad, zapping y
+    gaveta inhibidos para un partido. Chip eliminado de la pantalla de TV en vivo.
+  - Presupuesto: 5/5 archivos, **74/80 líneas** — techo subido con la decisión del dueño
+    documentada en el guardarraíl, NUVIO-ES.md y este doc.

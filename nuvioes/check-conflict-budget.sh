@@ -43,14 +43,16 @@ ALLOWED_UPSTREAM_FILES=(
 # poner los ajustes de la feature donde estan los de la app original (categoria en
 # SettingsScreen) en vez de un panel interno.
 #
-# Costo medido contra el fork: ~17 lineas (import del icono, miembro del enum, bloque
-# SettingsSectionSpec, entrada en el mapa de FocusRequester y rama del `when`). El presupuesto
-# pasa de 33 a ~50.
+# Subieron de 60 a 80 el 2026-10-01, con aprobacion explicita del dueno (pidio la seccion
+# "Partidos" en el riel lateral: "lo quiero en su propia seccion, no dentro de tv en vivo"),
+# para promocionar la vista de partidos a destino propio. Costo medido: 74 lineas
+# (Screen.kt 2, NuvioNavHost.kt 10, MainActivity.kt 30, build.gradle.kts 14,
+# SettingsScreen.kt 18). Los archivos siguen siendo los mismos 5.
 #
 # La disciplina sigue igual: subir el techo otra vez es una decision aparte, no un efecto
 # secundario de agregar una pantalla.
 MAX_UPSTREAM_FILES=5
-MAX_UPSTREAM_LINES=60
+MAX_UPSTREAM_LINES=80
 
 # ---------------------------------------------------------------------------
 # Archivos y directorios PROPIOS. Nada de comodines amplios: upstream también

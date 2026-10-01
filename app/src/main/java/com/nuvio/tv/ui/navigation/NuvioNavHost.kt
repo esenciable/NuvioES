@@ -24,6 +24,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.nuvio.tv.core.build.AppFeaturePolicy
 import com.nuvio.tv.domain.model.ExperienceMode
+import com.nuvio.tv.ext.livetv.LiveTvMatchesRoute
 import com.nuvio.tv.ext.livetv.LiveTvRoute
 import com.nuvio.tv.ui.screens.CatalogSeeAllScreen
 import com.nuvio.tv.ui.screens.ExperienceModeSelectionScreen
@@ -1168,6 +1169,9 @@ private fun PlaybackNavHost(
         // Everything about the feature, including how it reaches the main player,
         // lives in com.nuvio.tv.ext.livetv and is invisible to this file.
         composable(Screen.LiveTv.route) { LiveTvRoute(navController) }
+
+        // ---- NuvioES hook: Partidos route. One line, like the Live TV entry. ----
+        composable(Screen.LiveTvMatches.route) { LiveTvMatchesRoute(navController) }
 
         composable(Screen.Library.route) {
             LibraryScreen(
