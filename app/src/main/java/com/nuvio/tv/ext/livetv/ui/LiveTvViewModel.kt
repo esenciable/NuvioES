@@ -39,6 +39,7 @@ import com.nuvio.tv.ext.livetv.domain.model.inCategory
 import com.nuvio.tv.ext.livetv.domain.matching
 import com.nuvio.tv.ext.livetv.domain.model.preferenceKey
 import dagger.hilt.android.lifecycle.HiltViewModel
+import android.os.SystemClock
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -98,6 +99,9 @@ class LiveTvViewModel @Inject constructor(
 
     /** Counts playback attempts so every play/retry request is a distinct object (see [LiveTvPlayRequest]). */
     private var playAttempt = 0
+
+    /** When the matches were last published: the freshness clock behind the Partidos TTL. */
+    private var matchesLoadedAtMs = 0L
 
     private var catalogs: List<LiveTvCatalog> = emptyList()
     private var installedAddons: List<Addon> = emptyList()
@@ -416,11 +420,17 @@ class LiveTvViewModel @Inject constructor(
      * [publish] rebuilds it and this path never calls it.
      */
     fun refreshMatchesOnly() {
-        // Matches already on screen: re-entering Partidos must not re-hit the addon. ERROR is
-        // deliberately retried -- an error published no matches, and re-entering the section is the
-        // only retry it gets short of the full refresh.
+        // Matches on screen are LIVE data: events rotate by the minute, so a list loaded once stays
+        // wrong as the day moves -- the owner opened Partidos in the afternoon and saw only the
+        // football that existed at that first load, hours stale. The section re-fetches on entry
+        // when its last load is older than [MATCHES_REFRESH_TTL_MS]; inside the window re-entering
+        // does not re-hit the addon (recomposition fires this on every navigation, not every minute).
+        // ERROR is deliberately retried -- an error published no matches, and re-entering the section
+        // is the only retry it gets short of the full refresh.
+        val stale = matchesLoadedAtMs > 0 &&
+            SystemClock.elapsedRealtime() - matchesLoadedAtMs >= MATCHES_REFRESH_TTL_MS
         when (_state.value.matchesStatus) {
-            LiveTvStatus.READY, LiveTvStatus.EMPTY -> return
+            LiveTvStatus.READY, LiveTvStatus.EMPTY -> if (!stale) return
             else -> Unit
         }
         viewModelScope.launch {
@@ -476,6 +486,9 @@ class LiveTvViewModel @Inject constructor(
 
     /** Publishes only the matches slice; the channel view is [refresh]'s to rebuild. */
     private fun publishMatches(status: LiveTvStatus, matches: List<LiveTvChannel>) {
+        // Every successful publication restarts the freshness clock the section re-entry checks --
+        // both the fast path and the full load end here.
+        matchesLoadedAtMs = SystemClock.elapsedRealtime()
         _state.update { it.copy(matches = matches, matchesStatus = status) }
     }
 
@@ -799,6 +812,12 @@ class LiveTvViewModel @Inject constructor(
          * point is to read every matches catalog and nothing else.
          */
         const val MATCHES_CATALOG_FRAGMENT = "sports-live"
+
+        /**
+         * How long a published matches list is trusted before re-entry re-fetches it: live events
+         * rotate by the minute, and the fast path made the first load stick for the whole session.
+         */
+        const val MATCHES_REFRESH_TTL_MS = 5 * 60_000L
 
     }
     // The fixed per-press dead-channel bound (MAX_ZAP_SKIPS = 3) lived here. It is gone: see [zap]
