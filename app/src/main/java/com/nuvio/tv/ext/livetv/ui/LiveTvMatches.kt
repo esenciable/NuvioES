@@ -24,11 +24,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -251,6 +254,17 @@ internal fun LiveTvMatchesGrid(
         return
     }
 
+    // The screen MUST open with a focused card. A television screen that opens with nothing focusable
+    // is a dead end -- the remote's every key lands nowhere, which is the reference fork's audit
+    // blocker A4 verbatim, reproduced here the day this section shipped without its own requestFocus.
+    val firstCardFocus = remember { FocusRequester() }
+    LaunchedEffect(matches.size) {
+        repeat(5) {
+            kotlinx.coroutines.yield()
+            runCatching { firstCardFocus.requestFocus() }
+        }
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(MATCH_GRID_COLUMNS),
         modifier = modifier.fillMaxSize(),
@@ -268,7 +282,8 @@ internal fun LiveTvMatchesGrid(
             MatchCard(
                 match = match,
                 resolving = resolvingKey == match.stableKey,
-                onClick = { onPlayMatch(match.stableKey) }
+                onClick = { onPlayMatch(match.stableKey) },
+                focusRequester = if (match == matches.first()) firstCardFocus else null
             )
         }
     }
@@ -278,7 +293,8 @@ internal fun LiveTvMatchesGrid(
 private fun MatchCard(
     match: LiveTvChannel,
     resolving: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    focusRequester: FocusRequester? = null
 ) {
     var focused by remember { mutableStateOf(false) }
 
@@ -287,6 +303,10 @@ private fun MatchCard(
         modifier = Modifier
             .fillMaxWidth()
             .onFocusChanged { focused = it.isFocused }
+            .then(
+                // Only the first card carries the requester: it is where the section plants focus.
+                focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier
+            )
             .clip(shape)
             .background(if (focused) NuvioTheme.colors.SecondaryVariant else NuvioTheme.colors.Surface)
             .border(
