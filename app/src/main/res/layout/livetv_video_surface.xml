@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Live TV video surface.
+
+  WHY A LAYOUT RESOURCE INSTEAD OF `PlayerView(context)`:
+  `surface_type` is read from XML attributes during construction and has no setter, so a
+  programmatically built PlayerView can only ever get the default `surface_view` (SurfaceView).
+  A SurfaceView cannot be clipped by its Compose parent, which is exactly the defect this
+  feature already paid to fix once: the preview panel's rounded corners never reached the video.
+  This resource is the supported way to ask for a TextureView while keeping every other
+  PlayerView behavior (shutter, aspect-ratio frame, resize mode).
+
+  The PlayerView inflates the app-wide `exo_player_view.xml` override, same as the house player.
+-->
+<androidx.media3.ui.PlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view"
+    app:resize_mode="zoom"
+    app:use_controller="false" />

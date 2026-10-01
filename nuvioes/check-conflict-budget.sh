@@ -69,6 +69,7 @@ is_ours() {
     app/src/test/java/com/nuvio/tv/ext/livetv/*) return 0 ;;
     app/src/androidTest/java/com/nuvio/tv/ext/livetv/*) return 0 ;;
     app/src/main/res/values*/strings_livetv.xml) return 0 ;;
+    app/src/main/res/layout/livetv_*) return 0 ;;
     app/src/main/res/drawable/livetv_*) return 0 ;;
     app/src/main/res/raw/livetv_*) return 0 ;;
     *) return 1 ;;
