@@ -67,3 +67,15 @@ construir: de dónde salen los partidos, qué card, y qué reproductor para mult
     gaveta inhibidos para un partido. Chip eliminado de la pantalla de TV en vivo.
   - Presupuesto: 5/5 archivos, **74/80 líneas** — techo subido con la decisión del dueño
     documentada en el guardarraíl, NUVIO-ES.md y este doc.
+
+## Lote de feedback 2026-10-01 (segunda ronda del dueño)
+
+| # | Pedido | Estado |
+| --- | --- | --- |
+| P1/P2 | Partidos agrupados por deporte + barra superior de deportes | writer en curso (cliente) |
+| P3 | Activar/desactivar deportes en Settings (como canales) | writer en curso (cliente) |
+| P4 | Hora correcta: En vivo / Empieza a las HH:MM con tz del usuario | writer en curso; requiere `released` ISO desde el addon (writer en curso en kino-light-addon; MetaPreview.released ya existe) |
+| P5 | Fuentes con nombre real, no "Esencial Sport/Play" | writer en curso: label derivado de `title` (último segmento tras "·"); el addon manda name genérico + title con la fuente |
+| P6 | Zapping salta canales sin fuente hasta encontrar reproducible | pendiente (tras el writer de Partidos: comparte ViewModel) |
+| P7 | Gaveta: foco automático + flechas libres + foco de vuelta al reproductor | pendiente (idem) |
+| P8 | Actores "Algo salió mal" | CAUSA: `TMDB_API_KEY` vacía en el build (local.properties no la tiene). No extraíble de ningún APK local (original, fork, fctv77, MoviePlus — sin key en dex/assets). Requiere que el dueño genere una key gratuita en themoviedb.org y la ponga en local.properties/local.dev.properties |
