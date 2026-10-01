@@ -52,7 +52,9 @@
     <string name="live_tv_view_grid">Guide</string>
     <string name="live_tv_fullscreen_hint">Up / Down: change channel · Back: exit</string>
     <string name="live_tv_fullscreen_error">This channel could not be played</string>
+    <string name="live_tv_fullscreen_error_hint">OK to retry · Up/Down to change channel</string>
 
     <string name="live_tv_search_hint">Search channels</string>
+    <string name="live_tv_search_clear">Clear search</string>
     <string name="live_tv_search_no_results">No channels match that search</string>
 </resources>

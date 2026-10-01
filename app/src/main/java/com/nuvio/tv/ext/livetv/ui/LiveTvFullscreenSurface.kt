@@ -5,6 +5,7 @@ package com.nuvio.tv.ext.livetv.ui
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +26,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
@@ -42,8 +45,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
-import androidx.tv.material3.Button
-import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -83,6 +84,7 @@ internal fun LiveTvFullscreenSurface(
     liveTvPlayer: LiveTvPlayer,
     request: LiveTvPlayRequest,
     programmeTitle: String?,
+    resolveFailed: Boolean,
     onRetry: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -98,7 +100,6 @@ internal fun LiveTvFullscreenSurface(
     // Bumped by any interaction so the countdown restarts instead of the HUD blinking away mid-use.
     var hudTouch by remember { mutableStateOf(0) }
     val surfaceFocus = remember { FocusRequester() }
-    val retryFocus = remember { FocusRequester() }
 
     LaunchedEffect(hudTouch, request) {
         hudVisible = true
@@ -153,10 +154,11 @@ internal fun LiveTvFullscreenSurface(
         runCatching { surfaceFocus.requestFocus() }
     }
 
-    // On failure, hand the D-pad to the retry button instead of eating it.
-    LaunchedEffect(playbackError) {
-        if (playbackError != null) runCatching { retryFocus.requestFocus() }
-    }
+    // On failure the D-pad STAYS with the zapping. This is the deliberate reversal of an earlier
+    // design that handed focus to the retry button on error: the owner reported zapping dying
+    // whenever the next channel failed, and that is not how a television behaves. The failure is
+    // information -- an overlay saying what happened -- and the keys keep doing what they always do.
+    // Reintentar is the OK key on this surface; Back always leaves. Nothing is unreachable.
 
     Box(
         modifier = modifier
@@ -165,8 +167,6 @@ internal fun LiveTvFullscreenSurface(
             .focusRequester(surfaceFocus)
             .focusable()
             .onKeyEvent { event ->
-                // The trap: in error, do not consume directions -- let focus reach the button and Back.
-                if (playbackError != null) return@onKeyEvent false
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (event.key) {
                     Key.DirectionUp, Key.PageUp -> {
@@ -179,6 +179,18 @@ internal fun LiveTvFullscreenSurface(
                         hudTouch++
                         onNext()
                         true
+                    }
+
+                    // OK is Reintentar while a failure is on screen. Consumed there so the request
+                    // cannot leak into whatever else is composed; outside a failure it stays free.
+                    Key.DirectionCenter, Key.Enter -> {
+                        if (playbackError != null || resolveFailed) {
+                            onRetry()
+                            true
+                        } else {
+                            hudTouch++
+                            false
+                        }
                     }
 
                     // Anything else wakes the HUD back up without consuming the key.
@@ -225,7 +237,9 @@ internal fun LiveTvFullscreenSurface(
             )
         }
 
-        playbackError?.let {
+        // The failure overlay, for a player error and for a channel that never resolved. It informs;
+        // it does not capture: zapping keys are handled by the surface regardless of this overlay.
+        if (playbackError != null || resolveFailed) {
             PlaybackErrorOverlay(
                 // Retry re-resolves through the addon (the view model owns that). Replaying the stored URL
                 // reproduces a stale-URL failure by construction -- a 404 on a live segment usually means
@@ -233,8 +247,7 @@ internal fun LiveTvFullscreenSurface(
                 onRetry = {
                     playbackError = null
                     onRetry()
-                },
-                retryFocus = retryFocus
+                }
             )
         }
     }
@@ -271,8 +284,7 @@ private fun FullscreenHud(
 
 @Composable
 private fun PlaybackErrorOverlay(
-    onRetry: () -> Unit,
-    retryFocus: FocusRequester
+    onRetry: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -295,25 +307,32 @@ private fun PlaybackErrorOverlay(
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
-            Button(
-                onClick = onRetry,
-                colors = ButtonDefaults.colors(
-                    containerColor = NuvioTheme.colors.Secondary,
-                    focusedContainerColor = NuvioTheme.colors.SecondaryVariant,
-                    contentColor = NuvioTheme.colors.OnSecondary,
-                    focusedContentColor = NuvioTheme.colors.OnSecondaryVariant
-                ),
-                shape = ButtonDefaults.shape(RoundedCornerShape(50)),
+            // Not a focusable Button on purpose: focus belongs to the surface so the D-pad keeps
+            // zapping. This is the OK key's target, and the hint says so.
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(retryFocus)
+                    .clip(RoundedCornerShape(50))
+                    .background(NuvioTheme.colors.Secondary)
+                    .clickable(onClick = onRetry)
+                    .focusProperties { canFocus = false }
+                    .padding(vertical = NuvioTheme.spacing.xs),
+                contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = stringResource(R.string.live_tv_retry),
                     modifier = Modifier.padding(vertical = NuvioTheme.spacing.xs),
+                    color = NuvioTheme.colors.OnSecondary,
                     fontWeight = FontWeight.Medium
                 )
             }
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
+            Text(
+                text = stringResource(R.string.live_tv_fullscreen_error_hint),
+                style = MaterialTheme.typography.labelMedium,
+                color = NuvioTheme.colors.TextSecondary,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

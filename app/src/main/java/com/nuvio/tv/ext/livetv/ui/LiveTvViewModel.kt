@@ -192,13 +192,22 @@ class LiveTvViewModel @Inject constructor(
         zap(step = -1)
     }
 
-    private fun zap(step: Int) {
+    private fun zap(step: Int, skips: Int = 0) {
         val nextKey = LiveTvZapping.neighbourKey(
             channels = channels,
             currentKey = _focusedChannel.value,
             step = step
         ) ?: return
-        playChannel(nextKey)
+        // A channel whose stream cannot be resolved must not strand the zap: the user asked to move,
+        // so the movement continues to the next channel. Bounded, so a dead region of the catalogue
+        // cannot spin forever -- after [MAX_ZAP_SKIPS] dead channels in a row the overlay reports it
+        // and the keys keep working from there.
+        playChannel(
+            nextKey,
+            onResolveFailure = {
+                if (skips + 1 < MAX_ZAP_SKIPS) zap(step, skips + 1)
+            }
+        )
     }
 
     /**
@@ -422,10 +431,10 @@ class LiveTvViewModel @Inject constructor(
      * Failures are typed and surfaced, not swallowed: an addon that answers with no usable URL and an
      * addon that cannot be reached look the same to a user staring at a screen that did nothing.
      */
-    fun playChannel(stableKey: String) {
+    fun playChannel(stableKey: String, onResolveFailure: (() -> Unit)? = null) {
         val channel = channels.firstOrNull { it.stableKey == stableKey } ?: return
         val addon = installedAddons.firstOrNull { it.baseUrl == channel.addonBaseUrl }
-            ?: return failWith(LiveTvPlayFailure.RESOLVE_FAILED)
+            ?: return failWith(LiveTvPlayFailure.RESOLVE_FAILED, onResolveFailure)
 
         viewModelScope.launch {
             _state.update { it.copy(resolvingChannelKey = stableKey, playFailure = null) }
@@ -436,7 +445,7 @@ class LiveTvViewModel @Inject constructor(
             _state.update { it.copy(resolvingChannelKey = null) }
 
             if (stream == null) {
-                _state.update { it.copy(playFailure = LiveTvPlayFailure.NO_STREAMS) }
+                failWith(LiveTvPlayFailure.NO_STREAMS, onResolveFailure)
                 return@launch
             }
 
@@ -478,8 +487,17 @@ class LiveTvViewModel @Inject constructor(
         _state.update { it.copy(isFullscreen = false, playFailure = failure) }
     }
 
-    private fun failWith(failure: LiveTvPlayFailure) {
-        _state.update { it.copy(playFailure = failure) }
+    private fun failWith(failure: LiveTvPlayFailure, onResolveFailure: (() -> Unit)? = null) {
+        // A failure with a continuation hands the decision to the caller (the bounded zap skip);
+        // without one, the typed failure is surfaced as-is.
+        if (onResolveFailure != null) onResolveFailure()
+        else _state.update { it.copy(playFailure = failure) }
+    }
+
+    private companion object {
+
+        /** Dead channels skipped in one zap before reporting the failure, per [zap]. */
+        const val MAX_ZAP_SKIPS = 3
     }
 
     private fun publish(

@@ -45,9 +45,12 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -163,6 +166,9 @@ fun LiveTvScreen(
                 liveTvPlayer = fullscreenPlayer,
                 request = request,
                 programmeTitle = playingRow?.now?.title,
+                // A channel that never resolved reports through the same overlay as a playback error;
+                // the view model already skipped ahead a bounded number of dead channels before this.
+                resolveFailed = state.playFailure != null,
                 onRetry = { onRetryChannel(request.channel.stableKey) },
                 onPrevious = onPreviousChannel,
                 onNext = onNextChannel,
@@ -757,7 +763,6 @@ private fun ChannelSearchField(
     var isEditing by rememberSaveable { mutableStateOf(false) }
     var text by rememberSaveable { mutableStateOf(query) }
     val keyboardController = LocalSoftwareKeyboardController.current
-    val fieldFocus = remember { FocusRequester() }
 
     // Leaving the screen must not leave the keyboard behind.
     DisposableEffect(Unit) { onDispose { keyboardController?.hide() } }
@@ -771,7 +776,7 @@ private fun ChannelSearchField(
         if (isEditing) {
             repeat(5) {
                 kotlinx.coroutines.yield()
-                runCatching { fieldFocus.requestFocus() }
+                runCatching { focusRequester.requestFocus() }
                 keyboardController?.show()
             }
         } else {
@@ -779,82 +784,99 @@ private fun ChannelSearchField(
         }
     }
 
-    OutlinedTextField(
-        value = text,
-        onValueChange = { updated ->
-            text = updated
-            onQueryChange(updated)
-        },
-        // ONE field, always composed, with readOnly as the switch, and that replaces a two-state design
-        // that could not work.
-        //
-        // The old version swapped a clickable Box for this field when the user pressed OK. Swapping
-        // DESTROYS the focused node, so Compose hands focus to the nearest focusable -- the category chip
-        // -- and the field's retries never win that race. The log proved it: requestFocus succeeded, and
-        // one frame later the chip had focus again and the keyboard never opened.
-        //
-        // readOnly gets both halves: the node is never destroyed, so focus cannot be orphaned, and a
-        // read-only field does not summon the IME, so passing through the header with the D-pad stays
-        // quiet. Pressing OK flips it and the keyboard comes up.
-        //
-        // Upstream's search always composes its field for the same reason; the swap was my addition.
-        readOnly = !isEditing,
-        singleLine = true,
-        // The field's own text style, which the placeholder inherits. The material3 default here rendered
-        // the hint so large that its first and last letters were clipped by the pill's bezel -- it looked
-        // like a heading that had escaped its box, not a search hint.
-        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp),
-        // Pill shaped, like the Guide button next to it. The default OutlinedTextField shape is almost
-        // square, and next to a pill it read as a different kind of control from a different app.
-        shape = RoundedCornerShape(50),
-        // Explicit colours, because the material3 defaults are dark-on-dark here: the text was rendering
-        // in a colour meant for a light surface, and the search box is the one field whose contents the
-        // user has to read back.
-        colors = androidx.compose.material3.TextFieldDefaults.colors(
-            focusedTextColor = NuvioTheme.colors.TextPrimary,
-            unfocusedTextColor = NuvioTheme.colors.TextPrimary,
-            focusedContainerColor = NuvioTheme.colors.BackgroundElevated,
-            unfocusedContainerColor = NuvioTheme.colors.BackgroundElevated,
-            cursorColor = NuvioTheme.colors.Secondary,
-            focusedIndicatorColor = NuvioTheme.colors.Secondary,
-            unfocusedIndicatorColor = NuvioTheme.colors.Border,
-            focusedPlaceholderColor = NuvioTheme.colors.TextSecondary,
-            unfocusedPlaceholderColor = NuvioTheme.colors.TextSecondary
-        ),
-        // The style is set on the placeholder Text itself, not only on the field: a bare Text inside the
-        // placeholder lambda does not inherit the field's textStyle, which is why the hint stayed huge and
-        // clipped after the first attempt.
-        placeholder = {
-            Text(
-                text = stringResource(R.string.live_tv_search_hint),
-                style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
-            )
-        },
-        keyboardOptions = KeyboardOptions(
-            imeAction = androidx.compose.ui.text.input.ImeAction.Search
-        ),
+    // The pill is drawn by hand (Row + BasicTextField) rather than an OutlinedTextField for two reasons,
+    // both device-reported: the material3 field's internal padding put the text off centre inside a
+    // 44dp pill, and there was no way to put a clear button inside it. A Row centres every child
+    // vertically by construction, and the clear button is just the last child.
+    Row(
         modifier = Modifier
             .width(SEARCH_FIELD_WIDTH)
             .height(HEADER_CONTROL_HEIGHT)
-            .focusRequester(focusRequester)
-            .onFocusChanged { focus ->
-                if (!focus.isFocused && isEditing) {
-                    isEditing = false
-                    keyboardController?.hide()
+            .clip(RoundedCornerShape(50))
+            .background(NuvioTheme.colors.BackgroundElevated)
+            .border(
+                width = 1.dp,
+                color = if (isEditing) NuvioTheme.colors.Secondary else NuvioTheme.colors.Border,
+                shape = RoundedCornerShape(50)
+            )
+            .padding(horizontal = NuvioTheme.spacing.lg),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        BasicTextField(
+            value = text,
+            onValueChange = { updated ->
+                text = updated
+                onQueryChange(updated)
+            },
+            // ONE field, always composed, with readOnly as the switch. The old two-state design swapped
+            // composables, which DESTROYS the focused node, so Compose handed focus to the nearest
+            // focusable -- the category chip -- and the field's retries never won that race. readOnly
+            // keeps the node alive: not editing, the field takes focus without summoning the IME, so
+            // passing through the header with the D-pad stays quiet; pressing OK flips it.
+            readOnly = !isEditing,
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(
+                fontSize = 16.sp,
+                color = NuvioTheme.colors.TextPrimary
+            ),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(NuvioTheme.colors.Secondary),
+            keyboardOptions = KeyboardOptions(
+                imeAction = androidx.compose.ui.text.input.ImeAction.Search
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(focusRequester)
+                .onFocusChanged { focus ->
+                    if (!focus.isFocused && isEditing) {
+                        isEditing = false
+                        keyboardController?.hide()
+                    }
+                }
+                .onPreviewKeyEvent { event ->
+                    val isConfirm = event.type == KeyEventType.KeyDown &&
+                        (event.key == Key.Enter || event.key == Key.DirectionCenter)
+                    if (!isEditing && isConfirm) {
+                        isEditing = true
+                        true
+                    } else {
+                        false
+                    }
+                },
+            decorationBox = { innerField ->
+                // The hint is drawn here rather than through a placeholder parameter: a bare Text does
+                // not inherit the field's textStyle, which is why the hint once rendered huge and clipped.
+                Box {
+                    if (text.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.live_tv_search_hint),
+                            style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+                            color = NuvioTheme.colors.TextSecondary,
+                            maxLines = 1
+                        )
+                    }
+                    innerField()
                 }
             }
-            .onPreviewKeyEvent { event ->
-                val isConfirm = event.type == KeyEventType.KeyDown &&
-                    (event.key == Key.Enter || event.key == Key.DirectionCenter)
-                if (!isEditing && isConfirm) {
-                    isEditing = true
-                    true
-                } else {
-                    false
-                }
-            }
-    )
+        )
 
+        // The clear button exists ONLY while there is something to clear: no dead stop in the D-pad
+        // path for an action that cannot do anything.
+        if (text.isNotEmpty()) {
+            IconButton(
+                onClick = {
+                    text = ""
+                    onQueryChange("")
+                },
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = stringResource(R.string.live_tv_search_clear),
+                    tint = NuvioTheme.colors.TextSecondary
+                )
+            }
+        }
+    }
 }
 
 private val SEARCH_FIELD_WIDTH = 260.dp
