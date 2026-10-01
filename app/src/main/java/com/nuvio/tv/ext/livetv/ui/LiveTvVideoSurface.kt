@@ -27,6 +27,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.nuvio.tv.R
 import com.nuvio.tv.ext.livetv.core.LiveTvLoadControl
+import com.nuvio.tv.ext.livetv.core.LiveTvLoadErrorHandlingPolicy
 import com.nuvio.tv.ui.screens.player.NuvioExoPlayerPerformanceHelper
 import com.nuvio.tv.ui.screens.player.PlayerPlaybackNetworking
 import com.nuvio.tv.ui.theme.NuvioTheme
@@ -142,9 +143,7 @@ internal class LiveTvPlayer(context: Context) {
 
     val player: ExoPlayer = ExoPlayer.Builder(appContext)
         .setMediaSourceFactory(
-            DefaultMediaSourceFactory(
-                PlayerPlaybackNetworking.createDataSourceFactory(appContext)
-            )
+            liveMediaSourceFactory(appContext)
         )
         // The LIVE control, not upstream's. Upstream's floor is 15s and a live stream stutters on it; see
         // LiveTvLoadControl for the measurement. This is where the plan's biggest correction lives, and it
@@ -194,9 +193,8 @@ internal class LiveTvPlayer(context: Context) {
         if (!needsReload && loadedUrl == url && loadedHeaders == resolvedHeaders) return
 
         pendingGeneration++
-        val mediaSource = DefaultMediaSourceFactory(
-            PlayerPlaybackNetworking.createDataSourceFactory(appContext, resolvedHeaders)
-        ).createMediaSource(liveMediaItem(url))
+        val mediaSource = liveMediaSourceFactory(appContext, resolvedHeaders)
+            .createMediaSource(liveMediaItem(url))
         player.setMediaSource(mediaSource)
         player.prepare()
         player.playWhenReady = true
@@ -212,6 +210,18 @@ internal class LiveTvPlayer(context: Context) {
                 .build()
         )
         .build()
+
+    /**
+     * Every factory this player builds carries the live error policy: HTTP failures retry with backoff
+     * (see [LiveTvLoadErrorHandlingPolicy]), because a 404 on a rotating live playlist is a beat of
+     * silence, not the end of the stream.
+     */
+    private fun liveMediaSourceFactory(
+        context: Context,
+        headers: Map<String, String> = emptyMap()
+    ): DefaultMediaSourceFactory = DefaultMediaSourceFactory(
+        PlayerPlaybackNetworking.createDataSourceFactory(context, headers)
+    ).setLoadErrorHandlingPolicy(LiveTvLoadErrorHandlingPolicy())
 
     fun release() {
         runCatching {
