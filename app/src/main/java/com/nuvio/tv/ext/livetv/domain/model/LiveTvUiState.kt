@@ -136,7 +136,13 @@ data class LiveTvUiState(
  */
 data class LiveTvPlayRequest(
     val channel: LiveTvChannel,
-    val stream: LiveTvPlayableStream
+    val stream: LiveTvPlayableStream,
+    /**
+     * Which playback attempt this is. A retry that re-resolves the SAME stream must still count as a
+     * new request: the collector keys work off the request object, and an equal one would be ignored,
+     * leaving a dead player on screen. Bumped by the view model on every play and retry.
+     */
+    val attempt: Int = 0
 )
 
 /** What the split-screen panel is showing. */

@@ -183,10 +183,15 @@ internal class LiveTvPlayer(context: Context) {
      * [force] reloads even when the same stream is already playing -- that is what "Reintentar" after a
      * playback error does. Without it, walking from the preview into fullscreen on the same channel would
      * restart a stream that is already playing.
+     *
+     * A player sitting in [Player.STATE_IDLE] -- its state after a fatal playback error -- is never
+     * "already playing" anything, so a load on it always re-prepares even for an identical URL. Without
+     * this, a retry that re-resolves to the same URL would dedupe itself into a dead screen.
      */
     fun play(url: String, headers: Map<String, String>?, force: Boolean = false) {
         val resolvedHeaders = headers.orEmpty()
-        if (!force && loadedUrl == url && loadedHeaders == resolvedHeaders) return
+        val needsReload = force || player.playbackState == Player.STATE_IDLE
+        if (!needsReload && loadedUrl == url && loadedHeaders == resolvedHeaders) return
 
         pendingGeneration++
         val mediaSource = DefaultMediaSourceFactory(

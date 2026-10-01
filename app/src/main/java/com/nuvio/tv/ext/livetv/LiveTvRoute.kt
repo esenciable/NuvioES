@@ -55,6 +55,7 @@ fun LiveTvRoute(navController: NavController) {
         onSelectCategory = viewModel::selectCategory,
         onNextChannel = viewModel::nextChannel,
         onPreviousChannel = viewModel::previousChannel,
+        onRetryChannel = viewModel::retryChannel,
         onExitFullscreen = {
             fullscreenRequest = null
             viewModel.exitFullscreen()

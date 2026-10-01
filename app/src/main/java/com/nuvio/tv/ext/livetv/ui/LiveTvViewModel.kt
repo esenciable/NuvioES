@@ -93,6 +93,9 @@ class LiveTvViewModel @Inject constructor(
     private val _playRequests = Channel<LiveTvPlayRequest>(Channel.BUFFERED)
     val playRequests: Flow<LiveTvPlayRequest> = _playRequests.receiveAsFlow()
 
+    /** Counts playback attempts so every play/retry request is a distinct object (see [LiveTvPlayRequest]). */
+    private var playAttempt = 0
+
     private var catalogs: List<LiveTvCatalog> = emptyList()
     private var installedAddons: List<Addon> = emptyList()
     private var loadedChannels: List<LiveTvChannel> = emptyList()
@@ -442,8 +445,37 @@ class LiveTvViewModel @Inject constructor(
             previewCache.put(stableKey, stream)
             _focusedChannel.value = stableKey
             _state.update { it.copy(isFullscreen = true) }
-            _playRequests.send(LiveTvPlayRequest(channel = channel, stream = stream))
+            _playRequests.send(LiveTvPlayRequest(channel = channel, stream = stream, attempt = ++playAttempt))
         }
+    }
+
+    /**
+     * "Reintentar", from the fullscreen error overlay.
+     *
+     * It re-resolves the channel through the addon instead of replaying the stored URL. A 404 on a live
+     * segment usually means the URL in hand is stale -- a rotated playlist or an expired session -- so
+     * playing that same URL again reproduces the same failure by construction. A fresh resolve gets a
+     * fresh signature, host, and playlist.
+     *
+     * Failure sends the user back to the list with the typed reason: a fullscreen that cannot resolve
+     * has nothing to show, and staying there with the overlay dismissed would be a black dead end.
+     */
+    fun retryChannel(stableKey: String) {
+        val channel = channels.firstOrNull { it.stableKey == stableKey } ?: return
+        val addon = installedAddons.firstOrNull { it.baseUrl == channel.addonBaseUrl }
+            ?: return exitFullscreenWith(LiveTvPlayFailure.RESOLVE_FAILED)
+
+        viewModelScope.launch {
+            val stream = runCatching { streamResolver.resolve(addon, channel) }.getOrNull()
+            if (stream == null) return@launch exitFullscreenWith(LiveTvPlayFailure.NO_STREAMS)
+
+            previewCache.put(stableKey, stream)
+            _playRequests.send(LiveTvPlayRequest(channel = channel, stream = stream, attempt = ++playAttempt))
+        }
+    }
+
+    private fun exitFullscreenWith(failure: LiveTvPlayFailure) {
+        _state.update { it.copy(isFullscreen = false, playFailure = failure) }
     }
 
     private fun failWith(failure: LiveTvPlayFailure) {

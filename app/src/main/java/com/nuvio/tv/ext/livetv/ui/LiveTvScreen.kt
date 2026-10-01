@@ -101,6 +101,7 @@ fun LiveTvScreen(
     onSelectCategory: (LiveTvCategoryId) -> Unit,
     onNextChannel: () -> Unit,
     onPreviousChannel: () -> Unit,
+    onRetryChannel: (String) -> Unit,
     onExitFullscreen: () -> Unit
 ) {
     var showGrid by remember { mutableStateOf(false) }
@@ -162,6 +163,7 @@ fun LiveTvScreen(
                 liveTvPlayer = fullscreenPlayer,
                 request = request,
                 programmeTitle = playingRow?.now?.title,
+                onRetry = { onRetryChannel(request.channel.stableKey) },
                 onPrevious = onPreviousChannel,
                 onNext = onNextChannel,
                 onExit = onExitFullscreen

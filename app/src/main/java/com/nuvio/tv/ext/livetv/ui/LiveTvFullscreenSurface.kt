@@ -83,6 +83,7 @@ internal fun LiveTvFullscreenSurface(
     liveTvPlayer: LiveTvPlayer,
     request: LiveTvPlayRequest,
     programmeTitle: String?,
+    onRetry: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onExit: () -> Unit,
@@ -226,14 +227,12 @@ internal fun LiveTvFullscreenSurface(
 
         playbackError?.let {
             PlaybackErrorOverlay(
+                // Retry re-resolves through the addon (the view model owns that). Replaying the stored URL
+                // reproduces a stale-URL failure by construction -- a 404 on a live segment usually means
+                // the URL in hand is stale, so pressing Retry has to fetch a fresh one.
                 onRetry = {
                     playbackError = null
-                    liveTvPlayer.play(
-                        url = request.stream.url,
-                        headers = request.stream.headers,
-                        force = true
-                    )
-                    runCatching { surfaceFocus.requestFocus() }
+                    onRetry()
                 },
                 retryFocus = retryFocus
             )
