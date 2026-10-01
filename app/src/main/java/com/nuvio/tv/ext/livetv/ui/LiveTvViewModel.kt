@@ -464,7 +464,7 @@ class LiveTvViewModel @Inject constructor(
                 loadedChannels
             }
             val partition = LiveTvPartition.split(filtered)
-            rememberKnownSports(partition.matches)
+            rememberKnownSports(partition.matches, catalogs)
             val enabled = LiveTvSports.enabled(partition.matches, disabledSports)
             matches = enabled
             publishMatches(
@@ -549,26 +549,35 @@ class LiveTvViewModel @Inject constructor(
         // a channel list with NO rb_ event in it and a matches list with no disabled sport in it.
         val partition = LiveTvPartition.split(filtered)
         channels = partition.channels
-        rememberKnownSports(partition.matches)
+        rememberKnownSports(partition.matches, catalogs)
         matches = LiveTvSports.enabled(partition.matches, disabledSports)
     }
 
     /**
-     * Publishes the sports the matches carried to the store, so the settings screen can list them.
+     * Publishes the sports the settings screen can list to the store, so the settings screen can
+     * show them.
      *
      * The settings ViewModel deliberately never loads channels -- its documented design -- so it
-     * cannot derive this list itself; the screen, which HAS the matches, is the publisher, and the
-     * store bridges the two exactly as it bridges every preference the pane flips. The set is taken
-     * from the partition BEFORE [LiveTvSports.enabled] runs: a disabled sport must stay known, or
-     * its settings row would vanish and it could never be turned back on -- the same unreachable
-     * toggle the review caught when the rows were derived from the settings state's own matches.
+     * cannot derive this list itself; the screen, which HAS the catalogs and the matches, is the
+     * publisher, and the store bridges the two exactly as it bridges every preference the pane
+     * flips.
+     *
+     * The set is the UNION of two sources: the sports the addon's manifest declares via its
+     * per-sport catalogs ([LiveTvSports.sportsFromCatalogs] -- it exists even when a sport has zero
+     * events today, so Settings must offer every sport the addon can publish), and the sports
+     * actually observed in the partitioned matches (an addon could ship a live event for a sport its
+     * manifest forgot). The set is taken from the partition BEFORE [LiveTvSports.enabled] runs: a
+     * disabled sport must stay known, or its settings row would vanish and it could never be turned
+     * back on -- the same unreachable toggle the review caught when the rows were derived from the
+     * settings state's own matches.
      *
      * Deduplicated like the settings observers dedupe: publish() runs many times between catalog
      * loads, and an identical set must not reach the store again. The field starts empty, so an
      * empty observation at startup is also skipped instead of wiping a remembered list.
      */
-    private fun rememberKnownSports(partitionedMatches: List<LiveTvChannel>) {
-        val sports = LiveTvSports.sportKeysOf(partitionedMatches).toSet()
+    private fun rememberKnownSports(partitionedMatches: List<LiveTvChannel>, liveCatalogs: List<LiveTvCatalog>) {
+        val sports = LiveTvSports.sportKeysOf(partitionedMatches).toSet() +
+            LiveTvSports.sportsFromCatalogs(liveCatalogs)
         if (sports == lastKnownSportsWritten) return
         lastKnownSportsWritten = sports
         viewModelScope.launch { liveTvStore.rememberSports(sports) }

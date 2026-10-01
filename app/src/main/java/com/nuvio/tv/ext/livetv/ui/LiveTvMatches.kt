@@ -323,6 +323,9 @@ internal fun LiveTvMatchesGrid(
  * The sports chip bar above the grid: one "Todos" chip, then every sport the addon currently
  * publishes, ordered by [LiveTvSports.byCount] (count descending, then name).
  *
+ * The bar derives from the MATCHES, not from the manifest's full sport table: a chip for a sport
+ * with zero events on air cannot filter anything, so it would be dead UI.
+ *
  * A `Row` with a shared scroll, NOT a `LazyRow` -- the same decision the category slider documents:
  * the chip count is bounded by the addon's sport list, not by the match count, so every chip
  * composes and the row scrolls as one piece.

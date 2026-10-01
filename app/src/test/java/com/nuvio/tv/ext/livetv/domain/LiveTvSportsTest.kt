@@ -119,6 +119,57 @@ class LiveTvSportsTest {
         )
     }
 
+    @Test
+    fun `sportsFromCatalogs extracts the sport from per-sport catalog names`() {
+        val catalogs = listOf(
+            catalog(catalogId = "esencial-play-sports-football", catalogName = "Eventos Deportivos - Fútbol"),
+            catalog(catalogId = "esencial-play-sports-basket", catalogName = "Eventos Deportivos - Básquetbol")
+        )
+
+        assertEquals(setOf("Fútbol", "Básquetbol"), LiveTvSports.sportsFromCatalogs(catalogs))
+    }
+
+    @Test
+    fun `sportsFromCatalogs ignores the cross-sport live catalog`() {
+        val catalogs = listOf(
+            catalog(catalogId = "esencial-play-sports-live", catalogName = "Eventos Deportivos - En Vivo")
+        )
+
+        assertEquals(emptySet<String>(), LiveTvSports.sportsFromCatalogs(catalogs))
+    }
+
+    @Test
+    fun `sportsFromCatalogs ignores catalogs that are not per-sport catalogs`() {
+        val catalogs = listOf(
+            catalog(catalogId = "esencial-play-tv-argentina", catalogName = "TV Argentina - Canal 13"),
+            catalog(catalogId = "vivo", catalogName = "Eventos Deportivos - Fútbol")
+        )
+
+        assertEquals(emptySet<String>(), LiveTvSports.sportsFromCatalogs(catalogs))
+    }
+
+    @Test
+    fun `sportsFromCatalogs skips a catalogName without the separator instead of crashing`() {
+        val catalogs = listOf(
+            catalog(catalogId = "esencial-play-sports-other", catalogName = "Eventos Deportivos"),
+            catalog(catalogId = "esencial-play-sports-tenis", catalogName = "Eventos Deportivos - Tenis")
+        )
+
+        assertEquals(setOf("Tenis"), LiveTvSports.sportsFromCatalogs(catalogs))
+    }
+
+    private fun catalog(
+        catalogId: String,
+        catalogName: String
+    ) = LiveTvCatalog(
+        addonBaseUrl = "https://addon.test/token",
+        addonName = "Esencial Play",
+        addonId = "esencial-play",
+        catalogId = catalogId,
+        catalogName = catalogName,
+        apiType = "tv"
+    )
+
     private fun match(
         id: String = "rb_1",
         genres: List<String>

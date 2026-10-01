@@ -13,6 +13,28 @@ import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
 object LiveTvSports {
 
     /**
+     * Every sport name the addon's MANIFEST declares, read from the per-sport TV catalogs.
+     *
+     * WHY the manifest and not the matches: the manifest is the addon's own declared sport table --
+     * it exists even when a sport has zero events today, and Settings must offer control over every
+     * sport the addon CAN publish, not only the ones currently on air.
+     *
+     * A per-sport catalog is one whose id contains the "sports-" fragment and is not the cross-sport
+     * live catalog (whose id ends with "sports-live"). Its display name carries the sport after the
+     * last " - " separator ("Eventos Deportivos - Fútbol" -> "Fútbol"); a catalogName without the
+     * separator carries no derivable sport and is skipped, not crashed on.
+     */
+    fun sportsFromCatalogs(catalogs: List<LiveTvCatalog>): Set<String> =
+        catalogs.asSequence()
+            .filter { it.catalogId.contains("sports-") && !it.catalogId.endsWith("sports-live") }
+            .mapNotNull { catalog ->
+                catalog.catalogName.substringAfterLast(" - ", missingDelimiterValue = "")
+                    .trim()
+                    .takeIf { it.isNotEmpty() }
+            }
+            .toSet()
+
+    /**
      * Stable store key for matches whose genre is missing, blank, or a bare discipline number.
      * Chosen to be impossible as a real sport name, because it IS the key a toggle persists under.
      */
