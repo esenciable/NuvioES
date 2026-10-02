@@ -43,6 +43,7 @@ class LiveTvStore @Inject constructor(
     private val hiddenCategoriesKey = stringSetPreferencesKey("livetv_hidden_categories")
     private val disabledSportsKey = stringSetPreferencesKey("livetv_disabled_sports")
     private val knownSportsKey = stringSetPreferencesKey("livetv_known_sports")
+    private val favoritesKey = stringSetPreferencesKey("livetv_favorite_channels")
 
     val hideAdultChannels: Flow<Boolean> = profileManager.activeProfileId.flatMapLatest { profileId ->
         factory.get(profileId, FEATURE).data.map { preferences ->
@@ -76,6 +77,16 @@ class LiveTvStore @Inject constructor(
     val disabledSports: Flow<Set<String>> = profileManager.activeProfileId.flatMapLatest { profileId ->
         factory.get(profileId, FEATURE).data.map { preferences ->
             preferences[disabledSportsKey] ?: emptySet()
+        }
+    }
+
+    /**
+     * The channels the user starred, by stable key. Stored as the marked set like every other
+     * toggle in this store: empty means "none marked", the default.
+     */
+    val favorites: Flow<Set<String>> = profileManager.activeProfileId.flatMapLatest { profileId ->
+        factory.get(profileId, FEATURE).data.map { preferences ->
+            preferences[favoritesKey] ?: emptySet()
         }
     }
 
@@ -131,6 +142,22 @@ class LiveTvStore @Inject constructor(
         store().edit { preferences ->
             val current = preferences[disabledSportsKey] ?: emptySet()
             preferences[disabledSportsKey] = if (enabled) current - sportKey else current + sportKey
+        }
+    }
+
+    /**
+     * Stars ([favorite] true) or unstars one channel by stable key.
+     *
+     * WHY read-modify-write inside the edit instead of writing a set captured outside: a DataStore
+     * `edit` is serialized per file, so reading the CURRENT set inside the lambda means two toggles
+     * racing (one per row, or drawer plus panel) each apply their own single-key delta on top of
+     * whatever landed first, and neither one's star is lost. A wholesale replace with a stale set
+     * would silently drop the other toggle.
+     */
+    suspend fun setFavorite(stableKey: String, favorite: Boolean) {
+        store().edit { preferences ->
+            val current = preferences[favoritesKey] ?: emptySet()
+            preferences[favoritesKey] = if (favorite) current + stableKey else current - stableKey
         }
     }
 

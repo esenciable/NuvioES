@@ -49,6 +49,10 @@
     <string name="live_tv_settings_section_subtitle">Channels, guide sources and parental filter</string>
     <string name="live_tv_category_all">All</string>
     <string name="live_tv_category_favorites">Favorites</string>
+
+    <!-- The favorite star at the end of a channel row (zapping drawer and main panel). -->
+    <string name="live_tv_add_favorite">Add to favorites</string>
+    <string name="live_tv_remove_favorite">Remove from favorites</string>
     <string name="live_tv_view_grid">Guide</string>
     <string name="live_tv_fullscreen_hint">Up / Down: change channel · Back: exit</string>
     <string name="live_tv_fullscreen_hint_match">Back: exit</string>

@@ -173,6 +173,16 @@ class LiveTvViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            liveTvStore.favorites.collect { marked ->
+                if (marked == favorites) return@collect
+                favorites = marked
+                // Republish so both the rows' `isFavorite` flags and the Favorites category's filter
+                // rebuild from the new set through the one publish path. A toggle therefore needs no
+                // publication of its own: the store flow is the single trigger.
+                publishIfSettled()
+            }
+        }
+        viewModelScope.launch {
             liveTvStore.hiddenCategoryIds.collect { hidden ->
                 if (hidden == hiddenCategoryIds) return@collect
                 hiddenCategoryIds = hidden
@@ -199,6 +209,17 @@ class LiveTvViewModel @Inject constructor(
     /** Turns a sport's matches on or off in the Partidos section; the store flow re-publishes. */
     fun setSportEnabled(sportKey: String, enabled: Boolean) {
         viewModelScope.launch { liveTvStore.setSportEnabled(sportKey, enabled) }
+    }
+
+    /**
+     * Stars or unstars one channel; the store flow re-publishes, exactly like [setSportEnabled].
+     *
+     * The Favorites slider category needs nothing extra to start working: `publish` already filters
+     * with `isFavorite = { it.stableKey in favorites }`, so once this field is actually populated the
+     * category shows the starred subset on the next publication.
+     */
+    fun toggleFavorite(stableKey: String) {
+        viewModelScope.launch { liveTvStore.setFavorite(stableKey, stableKey !in favorites) }
     }
 
     /**

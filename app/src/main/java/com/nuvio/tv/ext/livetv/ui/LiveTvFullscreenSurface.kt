@@ -88,6 +88,7 @@ internal fun LiveTvFullscreenSurface(
     resolveFailed: Boolean,
     channels: List<LiveTvChannelRow>,
     onZapTo: (String) -> Unit,
+    onToggleFavorite: (String) -> Unit,
     onRetry: () -> Unit,
     /** Auto-advance: the playing source fatally failed and the request carries further sources. */
     onAdvanceSource: (LiveTvPlayRequest) -> Unit,
@@ -334,6 +335,7 @@ internal fun LiveTvFullscreenSurface(
                     onZapTo(stableKey)
                 },
                 onDismiss = { drawerOpen = false; focusRestoreTick++ },
+                onToggleFavorite = onToggleFavorite,
                 modifier = Modifier.fillMaxSize()
             )
         }

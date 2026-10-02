@@ -129,6 +129,9 @@ internal fun LiveTvMatchesScreen(
                 // zap through or drawer to open. The surface keys its zapping and drawer off this.
                 channels = emptyList(),
                 onZapTo = {},
+                // Matches carry no channel list, so the drawer (and its favorite star) can never
+                // open here -- a no-op, exactly like `onZapTo` above.
+                onToggleFavorite = {},
                 onRetry = { onRetryChannel(request.channel.stableKey) },
                 onAdvanceSource = onAdvanceSource,
                 onPrevious = {},

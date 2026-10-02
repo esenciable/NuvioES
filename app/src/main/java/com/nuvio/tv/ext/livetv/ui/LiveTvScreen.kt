@@ -113,7 +113,8 @@ fun LiveTvScreen(
     onNextChannel: () -> Unit,
     onPreviousChannel: () -> Unit,
     onRetryChannel: (String) -> Unit,
-    onExitFullscreen: () -> Unit
+    onExitFullscreen: () -> Unit,
+    onToggleFavorite: (String) -> Unit
 ) {
     var showGrid by remember { mutableStateOf(false) }
 
@@ -190,6 +191,7 @@ fun LiveTvScreen(
                 resolveFailed = state.playFailure != null,
                 channels = state.channels,
                 onZapTo = onPlayChannel,
+                onToggleFavorite = onToggleFavorite,
                 onRetry = { onRetryChannel(request.channel.stableKey) },
                 onAdvanceSource = onAdvanceSource,
                 onPrevious = onPreviousChannel,
@@ -229,7 +231,8 @@ fun LiveTvScreen(
                 onChannelFocused = onChannelFocused,
                 onSelectCategory = onSelectCategory,
                 onOpenGrid = { showGrid = true },
-                onSearchQuery = onSearchQuery
+                onSearchQuery = onSearchQuery,
+                onToggleFavorite = onToggleFavorite
             )
         }
         }
@@ -256,7 +259,8 @@ private fun ChannelList(
     onChannelFocused: (String) -> Unit,
     onSelectCategory: (LiveTvCategoryId) -> Unit,
     onSearchQuery: (String) -> Unit,
-    onOpenGrid: () -> Unit
+    onOpenGrid: () -> Unit,
+    onToggleFavorite: (String) -> Unit
 ) {
     val listState = rememberLazyListState()
     val requesters = remember { mutableStateMapOf<String, FocusRequester>() }
@@ -435,6 +439,8 @@ private fun ChannelList(
                                 row = row,
                                 resolving = state.resolvingChannelKey == row.channel.stableKey,
                                 onClick = { onPlayChannel(row.channel.stableKey) },
+                                rowFocus = requester,
+                                onToggleFavorite = { onToggleFavorite(row.channel.stableKey) },
                                 onFocused = {
                                     chipFocused = false
                                     focusedKey = row.channel.stableKey
@@ -472,10 +478,18 @@ private fun ChannelRow(
     row: LiveTvChannelRow,
     resolving: Boolean,
     onClick: () -> Unit,
+    rowFocus: FocusRequester,
+    onToggleFavorite: () -> Unit,
     onFocused: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var focused by remember { mutableStateOf(false) }
+    // The star's entry point: RIGHT from the row text moves here. An explicit target is REQUIRED:
+    // one-dimensional focus search only finds candidates strictly outside the focused node's bounds
+    // in the direction of travel, and the star sits INSIDE the row's rect, so a geometric search
+    // would never find it (nor the row from the star, which is why the star's LEFT aims at rowFocus
+    // explicitly -- the same requester the screen uses for focus restore, attached to this row).
+    val starFocus = remember { FocusRequester() }
 
     val shape = RoundedCornerShape(12.dp)
     val background = when {
@@ -502,6 +516,10 @@ private fun ChannelRow(
                 color = if (focused) NuvioTheme.colors.Secondary else NuvioTheme.colors.Surface,
                 shape = shape
             )
+            // RIGHT from the row text moves into the star; UP/DOWN stay natural so the arrows keep
+            // walking the list exactly as before. OK is NOT rerouted: the row's `clickable` still
+            // plays, and the star's own `clickable` consumes its own press.
+            .focusProperties { right = starFocus }
             .clickable(onClick = onClick)
             .padding(horizontal = NuvioTheme.spacing.md, vertical = NuvioTheme.spacing.sm),
         verticalAlignment = Alignment.CenterVertically
@@ -547,6 +565,14 @@ private fun ChannelRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
+        // The "panel principal" half of the favorite star: same shared composable as the zapping
+        // drawer's, so the two surfaces cannot disagree about focus behaviour or toggling.
+        FavoriteStar(
+            isFavorite = row.isFavorite,
+            starFocus = starFocus,
+            rowFocus = rowFocus,
+            onToggle = onToggleFavorite
+        )
     }
 }
 
