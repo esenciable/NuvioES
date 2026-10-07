@@ -123,6 +123,10 @@ android {
         buildConfigField("String", "TRAKT_CLIENT_SECRET", "\"${localProperties.getProperty("TRAKT_CLIENT_SECRET", "")}\"")
         buildConfigField("String", "TRAKT_API_URL", "\"${localProperties.getProperty("TRAKT_API_URL", "https://api.trakt.tv/")}\"")
         buildConfigField("String", "TRAKT_REDIRECT_URI", "\"${localProperties.getProperty("TRAKT_REDIRECT_URI", "urn:ietf:wg:oauth:2.0:oob")}\"")
+        buildConfigField("String", "MAGIS_HOSTS", "\"${localProperties.getProperty("MAGIS_HOSTS", "")}\"")
+        buildConfigField("String", "MAGIS_APP_ID", "\"${localProperties.getProperty("MAGIS_APP_ID", "")}\"")
+        buildConfigField("String", "MAGIS_APK_VERSION", "\"${localProperties.getProperty("MAGIS_APK_VERSION", "")}\"")
+        buildConfigField("String", "MAGIS_3DES_KEY", "\"${localProperties.getProperty("MAGIS_3DES_KEY", "")}\"")
         buildConfigField("String", "SIMKL_CLIENT_ID", buildConfigString(resolveProperty(devProperties, localProperties, "SIMKL_CLIENT_ID")))
         buildConfigField("String", "SIMKL_APP_NAME", buildConfigString(resolveProperty(devProperties, localProperties, "SIMKL_APP_NAME", "nuvio")))
         buildConfigField("String", "MDBLIST_CLIENT_ID", buildConfigString(resolveProperty(devProperties, localProperties, "MDBLIST_CLIENT_ID")))
@@ -557,6 +561,8 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("io.mockk:mockk:1.13.12")
     testImplementation("com.squareup.okhttp3:mockwebserver:5.3.2")
+    // org.json real (no stubs) para testear los flujos de sesión/portal que parsean blobs del portal.
+    testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
