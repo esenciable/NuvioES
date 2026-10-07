@@ -155,7 +155,7 @@ class MagisChannelLoaderTest {
         val unconfigured = loader(null)
 
         assertFalse(unconfigured.isConfigured)
-        assertEquals(MagisChannelLoader.Load.EMPTY, unconfigured.load())
+        assertEquals(NativeLiveCatalogLoad.EMPTY, unconfigured.load())
     }
 
     @Test

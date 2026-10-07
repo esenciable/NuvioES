@@ -2,12 +2,14 @@ package com.nuvio.tv.ext.livetv.magis
 
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.ext.livetv.domain.LiveTvCatalog
+import com.nuvio.tv.ext.livetv.domain.NativeLiveSource
 import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
 
 /**
  * The identity Magis live wears inside the fork's Live TV: a NATIVE source that is not an addon,
  * rendered by the exact same models the addon catalogs use so the UI treats it like any other live
- * source.
+ * source. It is ONE ENTRY of the [com.nuvio.tv.ext.livetv.data.NativeLiveSources] list injected
+ * through DI; nothing downstream names it.
  *
  * [BASE_URL] is a sentinel, not a network address: every identity-sensitive structure — channel
  * stable keys, category ids, the catalog selector's pairing of addon to channel — keys off the
@@ -16,7 +18,13 @@ import com.nuvio.tv.ext.livetv.domain.model.LiveTvChannel
  * shape as the addon key (`BASE_URL|code`), so favourites, focus restoration and deduplication
  * work without a single special case downstream.
  */
-internal object MagisLiveSource {
+internal object MagisLiveSource : NativeLiveSource {
+
+    override val baseUrl: String get() = BASE_URL
+
+    override val sourceName: String get() = SOURCE_NAME
+
+    override val placeholderAddon: Addon get() = PLACEHOLDER_ADDON
 
     /**
      * Sentinel "addon base URL" for every Magis native channel and catalog. Never resolved over
@@ -52,7 +60,7 @@ internal object MagisLiveSource {
     )
 
     /** Whether [channel] plays through the native Magis client rather than an installed addon. */
-    fun ownsChannel(channel: LiveTvChannel): Boolean = channel.addonBaseUrl == BASE_URL
+    override fun ownsChannel(channel: LiveTvChannel): Boolean = channel.addonBaseUrl == BASE_URL
 
     /**
      * One portal category as a Live TV catalog: the category slider chip comes from

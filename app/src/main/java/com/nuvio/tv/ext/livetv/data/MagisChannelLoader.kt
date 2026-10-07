@@ -14,7 +14,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
 /**
- * The catalog side of the native Magis source, expressed in the fork's Live TV models.
+ * The catalog side of the native Magis source, expressed in the fork's Live TV models. It is ONE
+ * [NativeLiveCatalogLoader] among the injected native sources.
  *
  * The port the loader consumes — [MagisLiveCatalogApi] — is the smallest slice of
  * [MagisLiveClient] the catalog walk needs, so tests can fake the portal without a session, a
@@ -36,26 +37,15 @@ class MagisChannelLoader(
     /** Hard cap of portal pages per category, so a category that always answers full stops. */
     private val maxPagesPerCategory: Int = DEFAULT_MAX_PAGES,
     private val concurrency: Semaphore = Semaphore(DEFAULT_CONCURRENCY),
-) {
+) : NativeLiveCatalogLoader {
 
     /** Whether this build carries a usable Magis configuration at all. */
-    val isConfigured: Boolean get() = client != null
+    override val isConfigured: Boolean get() = client != null
 
-    data class Load(
-        val catalogs: List<LiveTvCatalog>,
-        val channels: List<LiveTvChannel>,
-        /** Categories whose channel reads failed; their catalog chip still publishes, minus channels. */
-        val failedCategories: Int,
-    ) {
-        companion object {
-            val EMPTY = Load(catalogs = emptyList(), channels = emptyList(), failedCategories = 0)
-        }
-    }
-
-    suspend fun load(): Load {
-        val api = client ?: return Load.EMPTY
+    override suspend fun load(): NativeLiveCatalogLoad {
+        val api = client ?: return NativeLiveCatalogLoad.EMPTY
         val categories = runCatching { api.categories() }.getOrDefault(emptyList())
-        if (categories.isEmpty()) return Load.EMPTY
+        if (categories.isEmpty()) return NativeLiveCatalogLoad.EMPTY
 
         // Categories are independent reads; the portal client's own rate limit is the real pacing
         // authority, so a bounded concurrency here only removes dead time between calls.
@@ -78,7 +68,11 @@ class MagisChannelLoader(
             }
             mergeChannels(batch.channels, batch.catalog, channels)
         }
-        return Load(catalogs = catalogs, channels = channels.values.toList(), failedCategories = failedCategories)
+        return NativeLiveCatalogLoad(
+            catalogs = catalogs,
+            channels = channels.values.toList(),
+            failedCategories = failedCategories,
+        )
     }
 
     /**

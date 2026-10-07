@@ -33,13 +33,13 @@ import com.nuvio.tv.ext.livetv.magis.MagisResult
 class MagisStreamResolver(
     /** The portal API, or null on a build without Magis configuration; resolves nothing then. */
     private val client: MagisLivePlaybackApi?,
-) {
+) : NativeLiveStreamResolver {
 
     /** The primary stream of the channel — the first CDN in portal order — or null on failure. */
-    suspend fun resolve(channelCode: String): LiveTvPlayableStream? =
+    override suspend fun resolve(channelCode: String): LiveTvPlayableStream? =
         resolveAll(channelCode).firstOrNull()
 
-    suspend fun resolveAll(channelCode: String): List<LiveTvPlayableStream> {
+    override suspend fun resolveAll(channelCode: String): List<LiveTvPlayableStream> {
         val api = client ?: return emptyList()
         val result = runCatching { api.resolveDetailed(channelCode) }.getOrNull()
         val session = (result as? MagisResult.Ok)?.data ?: return emptyList()

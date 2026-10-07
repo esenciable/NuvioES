@@ -11,8 +11,8 @@ import com.nuvio.tv.ext.livetv.data.CatalogChannelLoader
 import com.nuvio.tv.ext.livetv.data.LiveTvChannelLoad
 import com.nuvio.tv.ext.livetv.data.LiveTvPreviewCache
 import com.nuvio.tv.ext.livetv.data.LiveTvStore
-import com.nuvio.tv.ext.livetv.data.MagisChannelLoader
-import com.nuvio.tv.ext.livetv.data.MagisStreamResolver
+import com.nuvio.tv.ext.livetv.data.NativeLiveCatalogLoad
+import com.nuvio.tv.ext.livetv.data.NativeLiveSources
 import com.nuvio.tv.ext.livetv.data.RoutingLiveTvStreamResolver
 import com.nuvio.tv.ext.livetv.data.epg.EpgRepository
 import com.nuvio.tv.ext.livetv.data.epg.EpgSnapshot
@@ -42,7 +42,6 @@ import com.nuvio.tv.ext.livetv.domain.model.LiveTvUiState
 import com.nuvio.tv.ext.livetv.domain.model.canBeHidden
 import com.nuvio.tv.ext.livetv.domain.model.inCategory
 import com.nuvio.tv.ext.livetv.domain.matching
-import com.nuvio.tv.ext.livetv.magis.MagisLiveSource
 import com.nuvio.tv.ext.livetv.domain.model.preferenceKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import android.os.SystemClock
@@ -86,8 +85,7 @@ class LiveTvViewModel @Inject constructor(
     epgRepository: EpgRepository,
     streamRepository: StreamRepository,
     liveTvStore: LiveTvStore,
-    magisChannelLoader: MagisChannelLoader,
-    magisStreamResolver: MagisStreamResolver,
+    private val nativeSources: NativeLiveSources,
 ) : ViewModel() {
 
     private val addonRepository = addonRepository
@@ -96,17 +94,16 @@ class LiveTvViewModel @Inject constructor(
     private val channelLoader = CatalogChannelLoader(catalogRepository)
 
     /**
-     * One resolution path for BOTH sources: addon channels resolve through the addon protocol and
-     * native Magis channels through the Magis portal, decided by the channel's sentinel base URL
-     * (see [RoutingLiveTvStreamResolver]). Everything downstream — preview, play, matches, retry,
-     * zap — calls this and never asks which source a channel came from.
+     * One resolution path for ALL sources: addon channels resolve through the addon protocol and
+     * native channels through their own source, decided by the channel's sentinel base URL (see
+     * [RoutingLiveTvStreamResolver]). Everything downstream — preview, play, matches, retry, zap —
+     * calls this and never asks which source a channel came from.
      */
     private val streamResolver: LiveTvStreamResolver =
         RoutingLiveTvStreamResolver(
             addonResolver = AddonStreamResolver(streamRepository),
-            magisResolver = magisStreamResolver,
+            native = nativeSources,
         )
-    private val magisLoader = magisChannelLoader
     private val previewCache = LiveTvPreviewCache()
 
     private val _focusedChannel = MutableStateFlow<String?>(null)
@@ -126,13 +123,13 @@ class LiveTvViewModel @Inject constructor(
     private var catalogs: List<LiveTvCatalog> = emptyList()
 
     /**
-     * The native Magis source's catalogs, kept SEPARATE from [catalogs] on purpose: the addon list
+     * The native sources' catalogs, kept SEPARATE from [catalogs] on purpose: the addon list
      * drives the matches fast path, the EPG source discovery and the known-sports publication, all
-     * of which are addon-protocol concepts a native source must not join (Magis has no
-     * `sports-live` catalog id, no /epg.xml and no manifest sports). Only the category slider and
-     * the category filter merge the two, in [publish].
+     * of which are addon-protocol concepts a native source must not join (no `sports-live` catalog
+     * id, no /epg.xml and no manifest sports). Only the category slider and the category filter
+     * merge the two, in [publish].
      */
-    private var magisCatalogs: List<LiveTvCatalog> = emptyList()
+    private var nativeCatalogs: List<LiveTvCatalog> = emptyList()
     private var installedAddons: List<Addon> = emptyList()
     private var loadedChannels: List<LiveTvChannel> = emptyList()
     /** What every consumer sees: list, preview and playback all read this one, already filtered. */
@@ -366,11 +363,11 @@ class LiveTvViewModel @Inject constructor(
         if (stableKey == _state.value.preview?.channelKey) return
 
         val channel = findChannel(stableKey) ?: return
-        // The preview cache is skipped for native Magis channels on purpose: a cached Magis stream
-        // replays a STALE signed Content-Auth (the signature window is short, see
-        // [MagisStreamResolver]), so a preview resolved moments ago can be dead on replay. Addon
-        // streams carry no per-request signature and keep the cache.
-        if (!MagisLiveSource.ownsChannel(channel)) {
+        // The preview cache is skipped for native channels on purpose: a native source may sign
+        // each request over a short window (Magis re-signs its Content-Auth, see
+        // [MagisStreamResolver]), so a preview resolved moments ago can be dead on replay.
+        // Addon streams carry no per-request signature and keep the cache.
+        if (!nativeSources.ownsChannel(channel)) {
             previewCache.get(stableKey)?.let { cached ->
                 _state.update { it.copy(preview = cached.toPreview(stableKey), previewFailure = null) }
                 return
@@ -400,17 +397,14 @@ class LiveTvViewModel @Inject constructor(
     /**
      * The addon a channel resolves through.
      *
-     * Native Magis channels have no installed addon behind them, so they resolve through the
-     * placeholder identity — the routing resolver never uses it, but it lets ONE resolution path
-     * keep its `addon` shape for the addon side. Null means the channel's addon is genuinely not
-     * installed, the classic unresolvable case.
+     * Native channels have no installed addon behind them, so they resolve through the owning
+     * native source's placeholder identity — the routing resolver never uses it, but it lets ONE
+     * resolution path keep its `addon` shape for the addon side. Null means the channel's addon is
+     * genuinely not installed, the classic unresolvable case.
      */
     private fun resolverAddon(channel: LiveTvChannel): Addon? =
-        if (MagisLiveSource.ownsChannel(channel)) {
-            MagisLiveSource.PLACEHOLDER_ADDON
-        } else {
-            installedAddons.firstOrNull { it.baseUrl == channel.addonBaseUrl }
-        }
+        nativeSources.placeholderAddonFor(channel)
+            ?: installedAddons.firstOrNull { it.baseUrl == channel.addonBaseUrl }
 
     fun refresh() {
         // A full load is already walking every catalog; a second one would double the very request
@@ -445,12 +439,13 @@ class LiveTvViewModel @Inject constructor(
                     LiveTvChannelLoad(emptyList(), failedCatalogs = if (addonFailure != null) 1 else 0)
                 }
 
-                val magisLoad = loadMagisCatalogs()
+                val nativeLoad = nativeSources.load()
 
-                // Addon channels first, then the native source: each list keeps its own source's
-                // order, and the two keyspaces cannot collide (see [MagisLiveSource.BASE_URL]).
-                loadedChannels = addonLoad.channels + magisLoad.channels
-                magisCatalogs = magisLoad.catalogs
+                // Addon channels first, then the native sources: each list keeps its own source's
+                // order, and the keyspaces cannot collide (every native source keys off its own
+                // sentinel base URL).
+                loadedChannels = addonLoad.channels + nativeLoad.channels
+                nativeCatalogs = nativeLoad.catalogs
                 applyPartitionAndFilters()
 
                 val outcome = when {
@@ -461,7 +456,7 @@ class LiveTvViewModel @Inject constructor(
                 publish(
                     status = outcome,
                     message = addonFailure?.takeIf { outcome == LiveTvStatus.ERROR },
-                    failedCatalogs = addonLoad.failedCatalogs + magisLoad.failedCategories,
+                    failedCatalogs = addonLoad.failedCatalogs + nativeLoad.failedCategories,
                     // The matches view mirrors the full load's outcome, so after a full load the two
                     // views can never disagree about what exists.
                     matchesStatus = outcome,
@@ -472,17 +467,6 @@ class LiveTvViewModel @Inject constructor(
                 fullRefreshInFlight = false
             }
         }
-    }
-
-    /**
-     * Loads the native Magis source's catalogs and channels, or nothing when the build carries no
-     * usable Magis configuration. A failed load reports no Magis source at all rather than a broken
-     * one: the addon failure channel ([LiveTvUiState.errorMessage]) is reserved for the screen-level
-     * outcome, and an unconfigured source is simply absent, like an addon that is not installed.
-     */
-    private suspend fun loadMagisCatalogs(): MagisChannelLoader.Load {
-        if (!magisLoader.isConfigured) return MagisChannelLoader.Load.EMPTY
-        return runCatching { magisLoader.load() }.getOrDefault(MagisChannelLoader.Load.EMPTY)
     }
 
     /**
@@ -929,7 +913,7 @@ class LiveTvViewModel @Inject constructor(
             favorites = favorites,
             nowEpochMs = System.currentTimeMillis()
         )
-        val categories = LiveTvRows.categoriesFor(catalogs + magisCatalogs)
+        val categories = LiveTvRows.categoriesFor(catalogs + nativeCatalogs)
 
         _state.update { current ->
             current.copy(

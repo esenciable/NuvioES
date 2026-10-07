@@ -72,6 +72,22 @@ private fun magisChannel(code: String = "cyx-RCNHD") = LiveTvChannel(
 
 private fun placeholderAddon() = MagisLiveSource.PLACEHOLDER_ADDON
 
+/** The native-source list as the resolver sees it in production: Magis is its only entry today. */
+private fun nativeSources(resolver: NativeLiveStreamResolver) = NativeLiveSources(
+    listOf(
+        NativeLiveSources.Entry(
+            source = MagisLiveSource,
+            catalogLoader = FakeNativeLoader(),
+            streamResolver = resolver,
+        ),
+    ),
+)
+
+private class FakeNativeLoader : NativeLiveCatalogLoader {
+    override val isConfigured = true
+    override suspend fun load() = NativeLiveCatalogLoad.EMPTY
+}
+
 class MagisStreamResolverTest {
 
     @Test
@@ -128,7 +144,7 @@ class RoutingLiveTvStreamResolverTest {
         val api = FakePlaybackApi(
             result = MagisResult.Ok(session(MagisChannelCdn("cdn-a.example", "sign_type=cfl&token=AAAA1111BBBB2222CCCC3333DDDD4444"))),
         )
-        val resolver = RoutingLiveTvStreamResolver(addon, MagisStreamResolver(api))
+        val resolver = RoutingLiveTvStreamResolver(addon, nativeSources(MagisStreamResolver(api)))
 
         val stream = resolver.resolve(placeholderAddon(), magisChannel())
 
@@ -140,7 +156,7 @@ class RoutingLiveTvStreamResolverTest {
     fun `routes addon channels to the addon resolver`() = runTest {
         val addon = addonResolverRecorder()
         val api = FakePlaybackApi()
-        val resolver = RoutingLiveTvStreamResolver(addon, MagisStreamResolver(api))
+        val resolver = RoutingLiveTvStreamResolver(addon, nativeSources(MagisStreamResolver(api)))
 
         val addonChannel = magisChannel().copy(addonBaseUrl = "https://addon.example", id = "tv-1")
         val sources = resolver.resolveAll(placeholderAddon(), addonChannel)
@@ -148,5 +164,35 @@ class RoutingLiveTvStreamResolverTest {
         assertEquals(listOf("http://addon/tv-1"), sources.map { it.url })
         assertEquals(listOf("tv-1"), addon.asked)
         assertTrue(api.signedAuthBases.isEmpty())
+    }
+
+    @Test
+    fun `routes each native source of the list to its own resolver`() = runTest {
+        val addon = addonResolverRecorder()
+        val magisResolver = MagisStreamResolver(FakePlaybackApi())
+        val otherSource = object : com.nuvio.tv.ext.livetv.domain.NativeLiveSource {
+            override val baseUrl = "other://native-live"
+            override val sourceName = "Other"
+            override val placeholderAddon = placeholderAddon()
+        }
+        val otherResolver = object : NativeLiveStreamResolver {
+            override suspend fun resolve(channelId: String) =
+                LiveTvPlayableStream("http://other/$channelId", "other", null)
+
+            override suspend fun resolveAll(channelId: String) =
+                listOf(LiveTvPlayableStream("http://other/$channelId", "other", null))
+        }
+        val sources = NativeLiveSources(
+            listOf(
+                NativeLiveSources.Entry(MagisLiveSource, FakeNativeLoader(), magisResolver),
+                NativeLiveSources.Entry(otherSource, FakeNativeLoader(), otherResolver),
+            ),
+        )
+        val resolver = RoutingLiveTvStreamResolver(addon, sources)
+
+        val otherChannel = magisChannel().copy(addonBaseUrl = "other://native-live", id = "sv-1")
+
+        assertEquals("http://other/sv-1", resolver.resolve(placeholderAddon(), otherChannel)?.url)
+        assertTrue(addon.asked.isEmpty())
     }
 }
