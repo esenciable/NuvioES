@@ -2,7 +2,9 @@ package com.nuvio.tv.ext.livetv.di
 
 import com.nuvio.tv.ext.livetv.data.premiumtv.M3uDocumentFetcher
 import com.nuvio.tv.ext.livetv.data.premiumtv.OkHttpM3uFetcher
+import com.nuvio.tv.ext.livetv.data.premiumtv.PremiumTvChannelLoader
 import com.nuvio.tv.ext.livetv.data.premiumtv.PremiumTvM3uFeed
+import com.nuvio.tv.ext.livetv.data.premiumtv.PremiumTvStreamResolver
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -31,4 +33,20 @@ object LiveTvPremiumTvModule {
     @Singleton
     fun providePremiumTvM3uFeed(fetcher: M3uDocumentFetcher): PremiumTvM3uFeed =
         PremiumTvM3uFeed(fetcher = fetcher)
+
+    @Provides
+    @Singleton
+    fun providePremiumTvChannelLoader(feed: PremiumTvM3uFeed): PremiumTvChannelLoader =
+        PremiumTvChannelLoader(feed = feed)
+
+    @Provides
+    @Singleton
+    fun providePremiumTvStreamResolver(
+        feed: PremiumTvM3uFeed,
+        @Named("addonPermissive") okHttpClient: OkHttpClient,
+    ): PremiumTvStreamResolver = PremiumTvStreamResolver(
+        feed = feed,
+        ioDispatcher = Dispatchers.IO,
+        baseClient = okHttpClient,
+    )
 }

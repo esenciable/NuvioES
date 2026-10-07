@@ -37,7 +37,10 @@ Decisiones de diseño:
    (last-known-good) y la falla se reporta como conteo, sin borrar los canales ya visibles. Éste es
    un defecto explícito del plugin (`M3U muerto = lista vacía silenciosa`) y no se hereda.
 3. **TTL más largo que 5 min**: la lista cambia poco y pesa 375 KB. TTL de sesión (~30 min) con
-   last-known-good; el refresh manual del Live TV la re-consulta.
+   last-known-good, y **un fetch fallido no arma el TTL**: el reintento vuelve a intentar de
+   inmediato en vez de quedarse 30 min sirviendo una lista vacía. Dentro de la ventana del TTL el
+   ingreso a la pantalla NO re-descarga los 375 KB (no hay todavía un botón de refresco forzado de
+   catálogo; el feed ya expone `load(force)` y el seam puede cablearlo cuando exista ese botón).
 
 ## Cambio de diseño en el seam (para no duplicar ramas)
 Hoy el `LiveTvViewModel` hardcodea Magis en cuatro lugares (bypass del preview cache,
@@ -51,16 +54,24 @@ Se introduce una abstracción mínima `NativeLiveSource` (sentinel `BASE_URL`, `
 Regla: el cambio debe **encoger** el código del ViewModel, no agrandarlo.
 
 ## Fases
-- [ ] **P1 — Abstracción del seam**: `NativeLiveSource` + lista inyectada; Magis adaptada a la lista;
-      `RoutingLiveTvStreamResolver` ruteando sobre N fuentes. Sin cambio de comportamiento (suite
-      `ext.livetv.*` verde).
-- [ ] **P2 — Fetch + parser M3U**: cliente OkHttp (UA Chrome), parser puro de `EXTINF` +
-      `#EXTVLCOPT` por entrada (UA/referrer), agrupación por `group-title`, TTL + last-known-good.
-      Parser testeado con fixtures reales (grupos, logos, entradas con y sin EXTVLCOPT, líneas
-      vacías, `#EXTVLCOPT` huérfano).
-- [ ] **P3 — Catálogos + resolución**: `PremiumTvLiveSource` (sentinel `premiumtv://native-live`),
-      loader → `LiveTvCatalog`/`LiveTvChannel` por grupo, resolver con headers por entrada, follow de
-      redirect para `jmp2.uk`, default Samsung acotado.
+- [x] **P1 — Abstracción del seam** (`c4cf8de46`): `NativeLiveSource` (identity) + `NativeLiveSources`
+      (agregado en la capa data) inyectado como UNA dependencia. El ViewModel ya no nombra ninguna
+      fuente; `RoutingLiveTvStreamResolver` rutea sobre N. Magis quedó como una entrada de DI y su
+      contrato de config inválida (= fuente ausente) se preserva por fuente. **El ViewModel encogió
+      958 → 942 líneas**, que era el requisito de diseño.
+- [x] **P2 — Fetch + parser M3U** (`c4cf8de46`): `M3uParser` puro (atributos con y sin comillas,
+      títulos con coma, `#EXTVLCOPT` UA/referrer por entrada, líneas vacías, comentarios,
+      `#EXTVLCOPT` huérfano, entrada sin URL, grupo sintético si falta `group-title`) y
+      `PremiumTvM3uFeed` (OkHttp + UA Chrome, TTL 30 min, re-consulta forzada en refresh manual,
+      **last-known-good**). Fixtures con líneas reales de la lista (la entrada TCS con ambos
+      `EXTVLCOPT` y la de Samsung vía `jmp2.uk` sin ninguno).
+- [x] **P3 — Catálogos + resolución**: `PremiumTvLiveSource` (sentinel `premiumtv://native-live`),
+      loader → `LiveTvCatalog`/`LiveTvChannel` por grupo (con unión de `catalogIds`), resolver con
+      headers por entrada, follow de redirect para `jmp2.uk`, default Samsung acotado. **No hizo
+      falta tocar el ViewModel ni el routing**: el seam de P1 absorbió la segunda fuente completa,
+      que era la prueba de que la abstracción estaba bien cortada. El id de canal es el hash corto
+      (SHA-256/16 hex) de la URL del stream, así sobrevive a reordenamientos y re-fetch; el resolver
+      reconstruye el índice id → entrada desde el documento vigente.
 - [ ] **P4 — Verificación en device**: catálogo visible en Live TV junto a Magis, y playback de un
       canal de cada familia (stream directo IP:port, CDN con referrer propio, Samsung vía `jmp2.uk`).
 
@@ -70,4 +81,9 @@ Regla: el cambio debe **encoger** el código del ViewModel, no agrandarlo.
 - El addon server-side: no se toca.
 
 ## Evidencia
-(pendiente: commits por fase)
+- `c4cf8de46` — P1 + P2. Suite `ext.livetv.*`: 253 tests, 0 fallos (baseline 230).
+- P3 — PremiumTV como segunda fuente: 20 tests nuevos, suite `ext.livetv.*`: **273 tests, 0 fallos**.
+  Precedencia de headers medida y documentada en `PremiumTvStreamResolver`; default Samsung acotado a
+  hosts `jmp2.uk`/`samsung` (los 31 `jmp2.uk` son Samsung TV Plus y no declaran referrer).
+- Referencia y datos medidos de la fuente: ver `mem_search` topic
+  `odd/premiumtv-live-native/tasks`.
