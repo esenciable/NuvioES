@@ -26,7 +26,7 @@ internal class MagisLiveClient(
     private val session: MagisSession,
     private val config: MagisRuntimeConfig,
     private val nowMs: () -> Long = { System.currentTimeMillis() },
-) {
+) : MagisLiveCatalogApi, MagisLivePlaybackApi {
 
     private val lock = Mutex()
     private var categoriesCache: List<MagisLiveCategory> = emptyList()
@@ -37,7 +37,7 @@ internal class MagisLiveClient(
      * The portal's live categories (`getNextColumns` over the `masnew_live` root — the path is
      * literally unversioned, measured from the working client).
      */
-    suspend fun categories(): List<MagisLiveCategory> {
+    override suspend fun categories(): List<MagisLiveCategory> {
         lock.withLock {
             if (categoriesCache.isNotEmpty() && nowMs() < categoriesExpireAt) return categoriesCache
         }
@@ -77,7 +77,7 @@ internal class MagisLiveClient(
      * categories hold different channel lists. One session serves several pages in a row
      * (measured in the TS reference: one session per CATEGORY, not per page).
      */
-    suspend fun channels(categoryId: Int, page: Int = 1): List<MagisLiveChannel> {
+    override suspend fun channels(categoryId: Int, page: Int): List<MagisLiveChannel> {
         val cacheKey = "$categoryId:$page"
         lock.withLock {
             channelsCache[cacheKey]?.takeIf { nowMs() < it.first }?.let { return it.second }
@@ -126,7 +126,7 @@ internal class MagisLiveClient(
      * [MagisSession.withValidSession] chain; callers that want the reason use this method, and
      * callers that only want a URL use [resolve].
      */
-    suspend fun resolveDetailed(channelCode: String): MagisResult<MagisChannelSession> {
+    override suspend fun resolveDetailed(channelCode: String): MagisResult<MagisChannelSession> {
         val sessionResult = session.ensureAnonymous()
         if (sessionResult !is MagisResult.Ok) return sessionResult.asError()
 
@@ -189,7 +189,7 @@ internal class MagisLiveClient(
      * The playlist URL for a resolved channel: `http://<bare host>/live/<playCode>.m3u8`.
      * The CDN host's `main_addr` carries a PATH (`/v3/youshi/`) that must NOT travel here.
      */
-    fun playlistUrl(cdn: MagisChannelSession): String = "http://${cdn.host}/live/${cdn.playCode}.m3u8"
+    override fun playlistUrl(cdn: MagisChannelSession): String = "http://${cdn.host}/live/${cdn.playCode}.m3u8"
 
     /**
      * Signed headers for one origin request against [cdn]. A FRESH moment/sign2 per request —
@@ -198,7 +198,7 @@ internal class MagisLiveClient(
      * The 32-hex `token` inside `authBase` is signed with [TweakedMd5.signO3]; the resulting
      * `sign2` travels in the `Content-Auth` header together with the same authBase query.
      */
-    fun signedHeaders(cdn: MagisChannelSession): Map<String, String> {
+    override fun signedHeaders(cdn: MagisChannelSession): Map<String, String> {
         val moment = nowMs()
         val sign2 = TweakedMd5.signO3(cdn.token, moment)
         return mapOf(
@@ -212,8 +212,10 @@ internal class MagisLiveClient(
         )
     }
 
-    private companion object {
+    internal companion object {
         const val LIVE_ROOT = "masnew_live"
+
+        /** One getLiveData page's size; the catalog loader pages until a page comes back short. */
         const val PAGE_SIZE = 100
         const val CATALOG_TTL_MS = 5 * 60 * 1000L
 
@@ -230,23 +232,23 @@ internal class MagisLiveClient(
 
 // --- models -----------------------------------------------------------------
 
-internal data class MagisLiveCategory(val id: Int, val name: String)
+data class MagisLiveCategory(val id: Int, val name: String)
 
-internal data class MagisLiveChannel(
+data class MagisLiveChannel(
     val code: String,
     val name: String,
     val number: Int,
     val logo: String,
 )
 
-internal data class MagisChannelCdn(
+data class MagisChannelCdn(
     /** Bare host of the cfl CDN that owns the authBase we signed. */
     val host: String,
     /** Query string (no scheme/path) that travels in the signed `Content-Auth` header. */
     val authBase: String,
 )
 
-internal data class MagisChannelSession(
+data class MagisChannelSession(
     val host: String,
     val authBase: String,
     /** License from the SAME liveAddressList entry that produced the playCode — never crossed. */

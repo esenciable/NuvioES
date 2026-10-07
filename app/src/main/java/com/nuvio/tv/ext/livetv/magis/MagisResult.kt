@@ -6,7 +6,7 @@ package com.nuvio.tv.ext.livetv.magis
  * isn't the same as the portal not answering — the first calls for reauthentication, the
  * second for a retry or a "no connection" notice.
  */
-internal sealed class MagisResult<out T> {
+sealed class MagisResult<out T> {
     data class Ok<out T>(val data: T) : MagisResult<T>()
 
     /** The portal answered with `returnCode != "0"` (e.g. `aaa100028` = "not logged in"). */
