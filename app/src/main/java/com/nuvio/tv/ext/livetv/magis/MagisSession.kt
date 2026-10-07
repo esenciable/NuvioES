@@ -121,13 +121,19 @@ internal class MagisSession(
         return MagisResult.Ok(Unit)
     }
 
-    private suspend fun reauthenticate(): MagisResult<Unit> = lock.withLock {
+    private suspend fun reauthenticate(): MagisResult<Unit> {
         // What's saved no longer works; if the token isn't cleared, `ensureAnonymous`'s fast
         // path would take it as good.
         store.read()?.let { previous ->
             store.save(previous.copy(userId = "", userToken = ""))
         }
-        ensureAnonymous()
+        // Deliberately OUTSIDE the session mutex: `ensureAnonymous` takes it itself, and
+        // kotlinx Mutex is not reentrant — holding it here hung this call forever (the Live
+        // TV screen stayed on "Looking for channels..." with no error). The clear-then-mint
+        // sequence is safe unheld: the store's read-modify-write is guarded inside
+        // `ensureAnonymous`'s lock, and clearing the token early only makes the next
+        // `ensureAnonymous` see the same dead session this one already saw.
+        return ensureAnonymous()
     }
 
     private fun saveFromResponse(j: JSONObject) {
