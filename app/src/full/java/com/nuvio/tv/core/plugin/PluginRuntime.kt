@@ -543,8 +543,17 @@ class PluginRuntime @Inject constructor() {
                 // Ignore header parsing errors
             }
 
+            // Header names are case-insensitive per HTTP, and callers coming from `fetch()`
+            // commonly send them lowercased. Every lookup below MUST be case-insensitive: a
+            // lowercase `content-type` used to lose against the body default, so OkHttp sent
+            // `application/x-www-form-urlencoded` for a JSON body and the server rejected it
+            // (observed: the Magis portal answers portal200001 — 版本已停止使用 — to a correct
+            // encrypted body announced with the wrong Content-Type).
+            fun headerOf(name: String): String? =
+                headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+
             // Default User-Agent
-            if (!headers.containsKey("User-Agent")) {
+            if (headerOf("User-Agent") == null) {
                 headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }
 
@@ -554,22 +563,22 @@ class PluginRuntime @Inject constructor() {
 
             when (method.uppercase()) {
                 "POST" -> {
-                    val contentType = headers["Content-Type"] ?: "application/x-www-form-urlencoded"
+                    val contentType = headerOf("Content-Type") ?: "application/x-www-form-urlencoded"
                     // Use ByteArray.toRequestBody to prevent OkHttp from appending '; charset=utf-8'
                     // to Content-Type, which would break HMAC signature verification on servers
                     // that include Content-Type in their canonical string (e.g. MovieBox).
                     requestBuilder.post(requestBytes.toRequestBody(contentType.toMediaType()))
                 }
                 "PUT" -> {
-                    val contentType = headers["Content-Type"] ?: "application/json"
+                    val contentType = headerOf("Content-Type") ?: "application/json"
                     requestBuilder.put(requestBytes.toRequestBody(contentType.toMediaType()))
                 }
                 "PATCH" -> {
-                    val contentType = headers["Content-Type"] ?: "application/json"
+                    val contentType = headerOf("Content-Type") ?: "application/json"
                     requestBuilder.patch(requestBytes.toRequestBody(contentType.toMediaType()))
                 }
                 "DELETE" -> if (bodyKind == "none") requestBuilder.delete()
-                    else requestBuilder.delete(requestBytes.toRequestBody((headers["Content-Type"] ?: "application/json").toMediaType()))
+                    else requestBuilder.delete(requestBytes.toRequestBody((headerOf("Content-Type") ?: "application/json").toMediaType()))
                 else -> requestBuilder.get()
             }
 
@@ -777,7 +786,14 @@ class PluginRuntime @Inject constructor() {
                 }
 
                 // Add default User-Agent
-                if (!headers['User-Agent']) {
+                // Header names are case-insensitive; checking only 'User-Agent' would add a second
+                // User-Agent key for a caller that sent 'user-agent', and OkHttp would then send
+                // the header twice.
+                var hasUserAgent = false;
+                for (var hk in headers) {
+                    if (hk.toLowerCase() === 'user-agent') { hasUserAgent = true; break; }
+                }
+                if (!hasUserAgent) {
                     headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
                 }
 
