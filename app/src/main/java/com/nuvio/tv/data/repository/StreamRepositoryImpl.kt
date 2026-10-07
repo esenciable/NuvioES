@@ -429,11 +429,7 @@ class StreamRepositoryImpl @Inject constructor(
     /**
      * Stream local plugin results - each scraper sends results individually
      */
-    private fun String.canRunLocalPlugins(): Boolean {
-        return startsWith("kitsu:", ignoreCase = true) ||
-            startsWith("anilist:", ignoreCase = true) ||
-            startsWith("mal:", ignoreCase = true)
-    }
+    private fun String.canRunLocalPlugins(): Boolean = canRunLocalPlugins(this)
 
     private suspend fun streamLocalPlugins(
         pluginId: String,
@@ -738,4 +734,20 @@ class StreamRepositoryImpl @Inject constructor(
     private fun encodePathSegment(value: String): String {
         return URLEncoder.encode(value, "UTF-8").replace("+", "%20")
     }
+}
+
+/**
+ * Local plugins run for ids the app cannot map to a TMDB entry: the anime-namespace ids, and
+ * IMDb `tt…` ids when TMDB lookup failed or no API key is configured (plugins resolve the
+ * title themselves — the esencial-providers providers embed their own TMDB access and accept
+ * `tt…` directly). Without the `tt` case, a failed `ensureTmdbId` silently skips every local
+ * plugin and the detail screen reports "Playback unavailable" with zero attempted sources.
+ */
+internal fun canRunLocalPlugins(videoId: String): Boolean {
+    if (videoId.startsWith("kitsu:", ignoreCase = true) ||
+        videoId.startsWith("anilist:", ignoreCase = true) ||
+        videoId.startsWith("mal:", ignoreCase = true)
+    ) return true
+    // IMDb format: `tt` immediately followed by digits ("ttx…" is not an IMDb id).
+    return videoId.contains(Regex("^tt\\d+", RegexOption.IGNORE_CASE))
 }
