@@ -45,3 +45,28 @@ internal fun hexToBytes(hex: String): ByteArray =
 
 internal fun bytesToHex(bytes: ByteArray): String =
     bytes.joinToString("") { "%02x".format(it) }
+
+/**
+ * Lazily builds [MagisCrypto] from the live config and rebuilds it ONLY when the 3DES key
+ * actually changes: a key rotation from the remote config lands on the very next call without
+ * restarting the app, and a stable config pays no `SecretKeySpec`/cipher-init churn per call.
+ * Returns `null` only while the current config carries an unusable key (the remote config's
+ * all-or-nothing validation makes this rare; the DI layer treats it as "source absent").
+ */
+internal class MagisCryptoHolder(private val keyProvider: () -> String) {
+
+    private val lock = Any()
+    private var builtForKey: String? = null
+    private var built: MagisCrypto? = null
+
+    fun get(): MagisCrypto? {
+        val key = keyProvider()
+        synchronized(lock) {
+            if (key != builtForKey) {
+                built = runCatching { MagisCrypto(key) }.getOrNull()
+                builtForKey = key
+            }
+            return built
+        }
+    }
+}

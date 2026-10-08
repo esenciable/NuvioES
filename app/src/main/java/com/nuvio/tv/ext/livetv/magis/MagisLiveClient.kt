@@ -24,7 +24,8 @@ import org.json.JSONObject
 internal class MagisLiveClient(
     private val portal: MagisPortalLike,
     private val session: MagisSession,
-    private val config: MagisRuntimeConfig,
+    /** Runtime config, read PER USE: the remote config can swap values while the process lives. */
+    private val configProvider: () -> MagisRuntimeConfig,
     private val nowMs: () -> Long = { System.currentTimeMillis() },
 ) : MagisLiveCatalogApi, MagisLivePlaybackApi {
 
@@ -145,7 +146,7 @@ internal class MagisLiveClient(
             portal.call(
                 path = "v14/getSlbInfo",
                 // The CHANNEL's code, not the playCode: the portal returns THAT signal's hosts.
-                bean = slbRequestParams(config.apkVersion, liveCodes = listOf(channelCode)),
+                bean = slbRequestParams(configProvider().apkVersion, liveCodes = listOf(channelCode)),
                 userId = session.userId,
                 userToken = session.userToken,
             )
@@ -206,7 +207,7 @@ internal class MagisLiveClient(
                 "${cdn.authBase}&sign2_method=sign_o3&instance=0&start_moment=$moment&sign2=$sign2",
             "Content-License" to cdn.license,
             "User-Agent" to LIVE_USER_AGENT,
-            "App" to config.appId,
+            "App" to configProvider().appId,
             "App-Version" to LIVE_APP_VERSION,
             "X-Buffer" to "0",
         )

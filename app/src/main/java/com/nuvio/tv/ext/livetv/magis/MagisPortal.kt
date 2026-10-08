@@ -25,8 +25,12 @@ data class MagisRuntimeConfig(
     val hosts: List<String>,
     /** The `appId` the portal expects in the `apk` header and the device dict. */
     val appId: String,
-    /** The device dict's `apkVersion` (NOT the fixed `apkVer: 43404` header; different fields). */
+    /** The device dict's `apkVersion` (NOT the fixed `apkVer` header; different fields). */
     val apkVersion: String,
+    /** The `apkVer` HTTP header value (`43404`-style): the one that rotates with the portal. */
+    val apkVerHeader: String,
+    /** The `spkgVer` HTTP header / `sysVersion` device-dict value, also rotating. */
+    val spkgVer: String,
     /** 48-hex-character 3DES master key. */
     val threeDesKeyHex: String,
 )
@@ -61,10 +65,16 @@ internal interface MagisPortalLike {
  * the real values are injected by whoever wires the config (see [MagisRuntimeConfig]'s M4 note).
  */
 internal class MagisPortalClient(
-    private val crypto: MagisCrypto,
-    private val config: MagisRuntimeConfig,
+    /** Runtime config, read PER USE: hosts, `appId`, `apkVer` and `spkgVer` rotate with the
+     *  portal, and the remote config lands while the process is alive (see [MagisConfigProvider]).
+     *  Capturing a snapshot here would freeze the values from app start until restart. */
+    private val configProvider: () -> MagisRuntimeConfig,
+    /** Crypto, read PER USE: rebuilt only when the config's 3DES key actually changes. */
+    private val cryptoProvider: () -> MagisCrypto?,
     /** The minted device's `sn`, read on every call: `MagisSession` mints it and changes it live. */
     private val snProvider: () -> String = { "" },
+    /** `https` in production; `http` exists so tests can point this at a MockWebServer. */
+    private val scheme: String = "https",
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -90,6 +100,9 @@ internal class MagisPortalClient(
         userToken: String,
         sn: String?,
     ): MagisResult<JSONObject> {
+        val crypto = cryptoProvider()
+            ?: return MagisResult.RedError(IllegalStateException("config de Magis sin clave 3DES usable"))
+        val config = configProvider()
         val body = buildMap<String, Any?> {
             if (baseFields) {
                 put("portalCode", PORTAL_CODE)
@@ -97,20 +110,19 @@ internal class MagisPortalClient(
                 put("userToken", userToken)
             }
             putAll(bean)
-            putAll(deviceDict(sn ?: snProvider()))
+            putAll(deviceDict(config, sn ?: snProvider()))
         }
         val wire = crypto.encryptBody(JSONObject(body).toString())
 
         waitTurn()
-
         var lastError: Throwable? = null
-        for (host in hostOrder()) {
+        for (host in hostOrder(config)) {
             val request = Request.Builder()
-                .url("https://$host/api/portalCore/$path")
+                .url("$scheme://$host/api/portalCore/$path")
                 .post(wire.toRequestBody(jsonType))
                 .header("apk", config.appId)
-                .header("apkVer", APK_VER)
-                .header("spkgVer", SPKG_VER)
+                .header("apkVer", config.apkVerHeader)
+                .header("spkgVer", config.spkgVer)
                 .header("User-Agent", "okhttp/3.12.12")
                 .build()
             try {
@@ -138,7 +150,7 @@ internal class MagisPortalClient(
         return MagisResult.RedError(lastError ?: IllegalStateException("sin hosts configurados"))
     }
 
-    private fun hostOrder(): List<String> {
+    private fun hostOrder(config: MagisRuntimeConfig): List<String> {
         val preferred = preferredHost ?: return config.hosts
         return listOf(preferred) + config.hosts.filter { it != preferred }
     }
@@ -155,11 +167,11 @@ internal class MagisPortalClient(
      * some of them against the minted device. `reserve1`/`deviceToken`/`drmId` go EMPTY on
      * purpose — that's how production sends them.
      */
-    private fun deviceDict(sn: String): Map<String, Any?> = mapOf(
+    private fun deviceDict(config: MagisRuntimeConfig, sn: String): Map<String, Any?> = mapOf(
         "loginType" to "2",
         "appLanguage" to "en",
         "apkVersion" to config.apkVersion,
-        "sysVersion" to SPKG_VER,
+        "sysVersion" to config.spkgVer,
         "appId" to config.appId,
         "hardwareInfo" to "ranchu",
         "model" to "sdk_gphone64_arm64",
@@ -176,10 +188,8 @@ internal class MagisPortalClient(
     private companion object {
         const val PORTAL_CODE = "masnew"
 
-        /** `apkVer` is a fixed literal, different from the device dict's `apkVersion`: they're
-         *  two different fields of the original app, not a copy-paste error. */
-        const val APK_VER = "43404"
-        const val SPKG_VER = "2025-08-07 05:40:11_36_16_"
+        // `apkVer`/`spkgVer` are NOT constants anymore: they rotate with the portal and now come
+        // from the runtime config (magis-config.json -> MagisConfigProvider) on every request.
         const val RATE_LIMIT_MS = 400L
     }
 }

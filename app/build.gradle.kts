@@ -126,6 +126,10 @@ android {
         buildConfigField("String", "MAGIS_HOSTS", "\"${localProperties.getProperty("MAGIS_HOSTS", "")}\"")
         buildConfigField("String", "MAGIS_APP_ID", "\"${localProperties.getProperty("MAGIS_APP_ID", "")}\"")
         buildConfigField("String", "MAGIS_APK_VERSION", "\"${localProperties.getProperty("MAGIS_APK_VERSION", "")}\"")
+        // The wire headers rotate with the portal too, and they are the FALLBACK values: the live
+        // config comes from magis-config.json at runtime (see MagisRemoteConfig).
+        buildConfigField("String", "MAGIS_APK_VER_HEADER", "\"${localProperties.getProperty("MAGIS_APK_VER_HEADER", "43404")}\"")
+        buildConfigField("String", "MAGIS_SPKG_VER", "\"${localProperties.getProperty("MAGIS_SPKG_VER", "2025-08-07 05:40:11_36_16_")}\"")
         buildConfigField("String", "MAGIS_3DES_KEY", "\"${localProperties.getProperty("MAGIS_3DES_KEY", "")}\"")
         buildConfigField("String", "SIMKL_CLIENT_ID", buildConfigString(resolveProperty(devProperties, localProperties, "SIMKL_CLIENT_ID")))
         buildConfigField("String", "SIMKL_APP_NAME", buildConfigString(resolveProperty(devProperties, localProperties, "SIMKL_APP_NAME", "nuvio")))
