@@ -1029,6 +1029,11 @@ class PluginManager @Inject constructor(
                         scraperName = info.name,
                         filename = info.filename
                     )
+                // The manifest's `enabled` flag is the source of truth WHEN IT
+                // CHANGES: a manifest flip overrides the stored toggle (this is
+                // what makes pushing enabled:false turn a scraper off on
+                // installed devices). When the flag is unchanged, keep the
+                // stored value so a user's manual toggle survives refreshes.
                 val scraper = ScraperInfo(
                     id = scraperId,
                     repositoryId = repoId,
@@ -1037,7 +1042,11 @@ class PluginManager @Inject constructor(
                     version = info.version,
                     filename = info.filename,
                     supportedTypes = info.supportedTypes,
-                    enabled = existingScraper?.enabled ?: defaultEnabled,
+                    enabled = resolveScraperEnabled(
+                        existingScraper = existingScraper,
+                        manifestEnabled = info.enabled,
+                        defaultEnabled = defaultEnabled
+                    ),
                     manifestEnabled = info.enabled,
                     logo = info.logo,
                     contentLanguage = info.contentLanguage ?: emptyList(),
@@ -1057,12 +1066,36 @@ class PluginManager @Inject constructor(
             }
         }
 
+        // Reconcile deletions: the manifest is the source of truth for WHICH
+        // scrapers from this repo exist. This runs only after a successful
+        // manifest fetch (downloadJsScrapers is only called with a non-null
+        // manifest) and after the full download pass, so a transient network
+        // failure never garbage-collects installed scrapers. Manifest-listed
+        // scrapers whose individual download failed are preserved here — only
+        // entries the manifest no longer lists are removed.
+        val removedScrapers = scrapersRemovedByManifest(repoId, scraperInfos, existingScrapers)
+        if (removedScrapers.isNotEmpty()) {
+            removedScrapers.forEach { removed ->
+                if (removed.type == RepositoryType.EXTERNAL_DEX) {
+                    // Mirrors removeRepository: delete the extension file and
+                    // evict its cached class loaders.
+                    externalExtensionLoader.deleteExtension(removed.id)
+                } else {
+                    dataStore.deleteScraperCode(removed.id)
+                }
+                Log.d(TAG, "Reconcile: removed scraper absent from manifest: ${removed.name} (${removed.id})")
+            }
+        }
+
+        val removedIds = removedScrapers.mapTo(HashSet()) { it.id }
+        val keptScrapers = existingScrapers.filter { it.id !in removedIds }
+
         // The old upsert preserved each scraper's stored position, so reordering
         // the manifest never reached existing installs. Reorder the stored list to
         // the manifest order: manifest scrapers (in manifest order) first, then any
         // stored extras (other repos, failed downloads) keeping their relative order.
         val mergedScrapers = mergeScrapersToManifestOrder(
-            existingScrapers = existingScrapers,
+            existingScrapers = keptScrapers,
             manifestOrderedScrapers = downloadedScrapers
         )
         dataStore.saveScrapers(mergedScrapers)
@@ -1140,6 +1173,51 @@ class PluginManager @Inject constructor(
     companion object {
         private const val MAX_PARALLEL_DOWNLOADS = 10
     }
+}
+
+/**
+ * Resolves the installed `enabled` state for a manifest scraper entry.
+ *
+ * - New scraper (no stored entry) → the manifest default, which already folds in
+ *   the PluginSafety videasy opt-out.
+ * - Existing scraper whose stored `manifestEnabled` differs from the manifest's
+ *   flag → the manifest wins: the owner explicitly changed the flag, so it
+ *   overrides the stored toggle (and `manifestEnabled` is persisted as the new
+ *   flag by the caller).
+ * - Existing scraper with an unchanged manifest flag → keep the stored value so
+ *   a user's manual toggle survives ordinary refreshes.
+ *
+ * Public so the unit-test source set can exercise the rule directly.
+ */
+fun resolveScraperEnabled(
+    existingScraper: ScraperInfo?,
+    manifestEnabled: Boolean,
+    defaultEnabled: Boolean
+): Boolean = when {
+    existingScraper == null -> defaultEnabled
+    manifestEnabled != existingScraper.manifestEnabled -> manifestEnabled
+    else -> existingScraper.enabled
+}
+
+/**
+ * Computes which stored scrapers belong to `repoId` but are absent from the
+ * repository's manifest, and must therefore be deleted.
+ *
+ * `manifestScrapers == null` models a FAILED manifest fetch: nothing is ever
+ * deleted, because without a successfully fetched manifest we cannot know the
+ * authoritative scraper list (never garbage-collect on a partial failure).
+ * Scrapers from other repositories are never touched.
+ *
+ * Public so the unit-test source set can exercise the reconciliation directly.
+ */
+fun scrapersRemovedByManifest(
+    repoId: String,
+    manifestScrapers: List<ScraperManifestInfo>?,
+    storedScrapers: List<ScraperInfo>
+): List<ScraperInfo> {
+    if (manifestScrapers == null) return emptyList()
+    val manifestScraperIds = manifestScrapers.mapTo(HashSet()) { "$repoId:${it.id}" }
+    return storedScrapers.filter { it.repositoryId == repoId && it.id !in manifestScraperIds }
 }
 
 /**
