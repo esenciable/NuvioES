@@ -17,6 +17,18 @@ Resultado: el addon resolvía con **2 llamadas al portal**; el plugin hace **6**
 Lo que ya se recortó del plugin (mint ∥ TMDB, payload 20→10) bajó 1.5s → 1.0s local: no alcanza.
 
 ## Fases
+- [x] **V2 — Integración como fuente nativa de streams**: `NativeVodSource` (nombre,
+      `isConfigured`, resolve propio) en `ext/livetv/domain/`, con `MagisVodSource` como
+      implementación sobre el MISMO stack de portal que el live (`MagisPortalStack` compartido en
+      `LiveTvMagisModule`: un rate limiter y una sesión para live+VOD) y el TMDB del fork detrás
+      de `TmdbTitleLookup`. `StreamRepositoryImpl` emite los grupos de la fuente por el MISMO
+      `resultChannel` que los scrapers, en un job propio en paralelo (aislamiento por fuente y
+      por job: un fallo nativo se loguea y se salta, nunca rompe la pantalla). La URL nativa es
+      CDN directo del portal: sale del repo tal cual, SIN pasar por el camino de scrapers.
+      Config inusable → lista de fuentes vacía / `isConfigured=false` → skip, nunca crash.
+- [x] **V3 — Orden**: `nativeFirstPluginOrder` en `StreamScreenViewModel` antepone los nombres de
+      las fuentes nativas a `pluginOrder`, así "Magis VOD" sigue saliendo primero y no cae en
+      `unknownPluginEntries`.
 - [ ] **V1 — Cliente VOD nativo** (`ext/livetv/magis/`, reusa el core M1: crypto, device, session,
       portal con failover y rate limit). Port 1:1 de los heuristics YA VERIFICADOS del plugin:
       1. Título/año: **reusar el servicio TMDB del fork** si está disponible (la app ya resolvió el
@@ -80,3 +92,20 @@ request). El plugin **no pacea** y el portal lo acepta. Costo estimado del pacin
 fría, 3 en la caliente): **~900 ms en la fría y ~370-540 ms en la caliente**. Es la próxima
 optimización concreta: bajar el mínimo (p.ej. 150 ms) mantiene la cortesía y devuelve ~⅓ del tiempo,
 con el A/B como verificación.
+
+### V4a medido: 400 → 150 ms, CERO rechazos en el portal VIVO
+Harness temporal (`MagisVodPacingLiveTest`, borrado tras correr) con el stack real desde
+`BuildConfig`, resolviendo Coco ×3 y Breaking Bad S1E1 ×2 en una JVM, back-to-back. Dos corridas
+completas (10 resolves vivos), `returnCode != 0` en NINGUNA pasada y las URLs byte a byte
+idénticas a las del A/B de V1 (mismo criterio de corrección):
+
+| pasada | RATE_LIMIT_MS=400 (baseline) | RATE_LIMIT_MS=150 |
+|---|---|---|
+| Coco fría (paga mint+TLS) | 5140 ms | 1539 ms (1313 ms en la 2ª corrida) |
+| Coco caliente | 767 / 797 ms | 261 / 312 ms (280 / 347 ms 2ª corrida) |
+| Breaking Bad S1E1 | 1238 / 1215 ms | 509 / 458 ms (518 / 468 ms 2ª corrida) |
+
+**Se queda 150 ms.** Justificación: el plugin JS envía sin pacing y el portal lo acepta, y la
+verificación en vivo a 150 ms no dio ni un solo rechazo en 10 resolves consecutivos — 150 ms es
+cortesía sobrante, no requisito del portal — y devuelve la mayor parte de los ~900 ms fríos /
+~370-540 ms calientes medidos. Si el portal empieza a rechazar, el revert es una constante.

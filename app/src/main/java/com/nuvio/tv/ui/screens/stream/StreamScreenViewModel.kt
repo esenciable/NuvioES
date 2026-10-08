@@ -92,8 +92,10 @@ class StreamScreenViewModel @Inject constructor(
     private val subtitleFileCache: com.nuvio.tv.core.player.SubtitleFileCache,
     private val torrentService: TorrentService,
     profileManager: com.nuvio.tv.core.profile.ProfileManager,
+    nativeVodSources: com.nuvio.tv.ext.livetv.data.NativeVodSources,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    private val nativeVodSources = nativeVodSources
     private var autoPlayHandledForSession = false
     private var directAutoPlayModeInitializedForSession = false
     private var directAutoPlayFlowEnabledForSession = false
@@ -464,9 +466,14 @@ class StreamScreenViewModel @Inject constructor(
 
             val installedAddons = addonRepository.getInstalledAddons().first().enabledAddons()
             val installedAddonOrder = installedAddons.map { it.displayName }
-            // Plugin streams follow the scraper registry order (manifest order),
-            // so slow sources like Magis don't land last by arrival time.
-            val pluginOrder = pluginManager.scrapers.first().map { it.name }
+            // Plugin streams follow the scraper registry order (manifest order), so slow sources
+            // like Magis don't land last by arrival time. Native VOD sources are NOT in that
+            // registry — without prepending them here their groups would fall into
+            // unknownPluginEntries and arrive last — so their names go FIRST.
+            val pluginOrder = nativeFirstPluginOrder(
+                nativeSourceNames = nativeVodSources.names,
+                scraperNames = pluginManager.scrapers.first().map { it.name }
+            )
             val directDebridSourceNames = emptyList<String>()
             val directDebridAvailable = false
             val persistedBingeGroup = if (playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode &&

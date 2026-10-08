@@ -83,8 +83,8 @@ internal class MagisPortalClient(
 
     private val jsonType = "application/json;charset=utf-8".toMediaType()
 
-    /** Minimum pace between calls: the portal is sensitive to bursts (the TS reference awaits
-     *  a 400 ms queue turn before every request). */
+    /** Minimum pace between calls: a small courtesy gap between portal calls (measured live —
+     *  see the RATE_LIMIT_MS note below; the TS reference paced 400 ms, the JS plugin none). */
     private val rateLimit = Mutex()
     private var lastCallMs = 0L
 
@@ -190,6 +190,12 @@ internal class MagisPortalClient(
 
         // `apkVer`/`spkgVer` are NOT constants anymore: they rotate with the portal and now come
         // from the runtime config (magis-config.json -> MagisConfigProvider) on every request.
-        const val RATE_LIMIT_MS = 400L
+        //
+        // Minimum pace between calls. The TS reference awaits a 400 ms queue turn before every
+        // request, but MEASURED (live portal, consecutive resolves, no rejection at any pass —
+        // see odd/tasks/magis-vod-native.md V4a evidence): the JS plugin sends UNGACED and is
+        // accepted fine, and 400 ms cost ~900 ms cold / ~370-540 ms warm. 150 ms keeps a
+        // courtesy gap while returning most of that: cold ~4 calls, warm 3 calls.
+        const val RATE_LIMIT_MS = 150L
     }
 }
