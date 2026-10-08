@@ -965,10 +965,11 @@ class PluginManager @Inject constructor(
         repoId: String,
         manifestUrl: String,
         scraperInfos: List<ScraperManifestInfo>
-    ) = withContext(Dispatchers.IO) {
+) = withContext(Dispatchers.IO) {
         val baseUrl = manifestUrl.substringBeforeLast("/")
-        val existingScrapers = dataStore.scrapers.first().toMutableList()
-        
+        val existingScrapers = dataStore.scrapers.first()
+        val downloadedScrapers = mutableListOf<ScraperInfo>()
+
         scraperInfos.forEach { info ->
             try {
                 val codeUrl = if (info.filename.startsWith("http")) {
@@ -1045,20 +1046,27 @@ class PluginManager @Inject constructor(
                 
                 // Save code
                 dataStore.saveScraperCode(scraperId, code)
-                
-                // Update scraper list
-                existingScrapers.removeAll { it.id == scraperId }
-                existingScrapers.add(scraper)
-                
+
+                // Track in manifest order; the stored list is re-ordered below.
+                downloadedScrapers.add(scraper)
+
                 Log.d(TAG, "Downloaded scraper: ${info.name}")
-                
+
             } catch (e: Exception) {
                 Log.e(TAG, "Error downloading scraper ${info.name}: ${e.message}", e)
             }
         }
-        
-        dataStore.saveScrapers(existingScrapers)
-    }
+
+        // The old upsert preserved each scraper's stored position, so reordering
+        // the manifest never reached existing installs. Reorder the stored list to
+        // the manifest order: manifest scrapers (in manifest order) first, then any
+        // stored extras (other repos, failed downloads) keeping their relative order.
+        val mergedScrapers = mergeScrapersToManifestOrder(
+            existingScrapers = existingScrapers,
+            manifestOrderedScrapers = downloadedScrapers
+        )
+        dataStore.saveScrapers(mergedScrapers)
+}
 
     /**
      * Download .cs3 DEX extensions in parallel and register them as scrapers.
@@ -1132,4 +1140,20 @@ class PluginManager @Inject constructor(
     companion object {
         private const val MAX_PARALLEL_DOWNLOADS = 10
     }
+}
+
+/**
+ * Merge freshly downloaded scrapers (in manifest order) with the stored scraper
+ * list. Manifest scrapers come first in manifest order (their updated entries
+ * replace the stored ones); stored scrapers not present in the manifest pass are
+ * preserved afterwards in their relative order — nothing is dropped.
+ *
+ * Public so the unit-test source set can exercise the pure merge logic directly.
+ */
+fun mergeScrapersToManifestOrder(
+    existingScrapers: List<ScraperInfo>,
+    manifestOrderedScrapers: List<ScraperInfo>
+): List<ScraperInfo> {
+    val manifestIds = manifestOrderedScrapers.mapTo(HashSet()) { it.id }
+    return manifestOrderedScrapers + existingScrapers.filter { it.id !in manifestIds }
 }

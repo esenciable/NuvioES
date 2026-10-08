@@ -10,7 +10,8 @@ import com.nuvio.tv.domain.model.StreamDebridCacheState
 object StreamAutoPlaySelector {
     fun orderAddonStreams(
         streams: List<AddonStreams>,
-        installedOrder: List<String>
+        installedOrder: List<String>,
+        pluginOrder: List<String> = emptyList()
     ): List<AddonStreams> {
         if (streams.isEmpty()) return streams
 
@@ -20,14 +21,27 @@ object StreamAutoPlaySelector {
                 addonRankByName[addonName] = index
             }
         }
+        val pluginRankByName = HashMap<String, Int>(pluginOrder.size)
+        pluginOrder.forEachIndexed { index, pluginName ->
+            if (pluginName !in pluginRankByName) {
+                pluginRankByName[pluginName] = index
+            }
+        }
 
         val (directDebridEntries, remainingEntries) = streams.partition {
             it.streams.any { stream -> stream.isDirectDebrid() }
         }
-        if (installedOrder.isEmpty()) return directDebridEntries + remainingEntries
+        if (addonRankByName.isEmpty() && pluginRankByName.isEmpty()) {
+            return directDebridEntries + remainingEntries
+        }
         val (addonEntries, pluginEntries) = remainingEntries.partition { it.addonName in addonRankByName }
         val orderedAddons = addonEntries.sortedBy { addonRankByName.getValue(it.addonName) }
-        return directDebridEntries + orderedAddons + pluginEntries
+        // Plugin groups follow the scraper registry order; unknown names keep their
+        // arrival order after the known ones (stable sort keeps equal ranks in place).
+        val (knownPluginEntries, unknownPluginEntries) =
+            pluginEntries.partition { it.addonName in pluginRankByName }
+        val orderedPlugins = knownPluginEntries.sortedBy { pluginRankByName.getValue(it.addonName) }
+        return directDebridEntries + orderedAddons + orderedPlugins + unknownPluginEntries
     }
 
     private fun isPlayable(stream: Stream): Boolean {

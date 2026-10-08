@@ -464,6 +464,9 @@ class StreamScreenViewModel @Inject constructor(
 
             val installedAddons = addonRepository.getInstalledAddons().first().enabledAddons()
             val installedAddonOrder = installedAddons.map { it.displayName }
+            // Plugin streams follow the scraper registry order (manifest order),
+            // so slow sources like Magis don't land last by arrival time.
+            val pluginOrder = pluginManager.scrapers.first().map { it.name }
             val directDebridSourceNames = emptyList<String>()
             val directDebridAvailable = false
             val persistedBingeGroup = if (playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode &&
@@ -474,7 +477,8 @@ class StreamScreenViewModel @Inject constructor(
             fun applySuccess(addonStreamGroups: List<AddonStreams>, isAllLoaded: Boolean) {
                 val orderedAddonStreams = StreamAutoPlaySelector.orderAddonStreams(
                     addonStreamGroups,
-                    installedAddonOrder
+                    installedAddonOrder,
+                    pluginOrder
                 )
 
                 // Preserve badges already computed by prior badge jobs so they
@@ -703,7 +707,7 @@ class StreamScreenViewModel @Inject constructor(
                                 // match is found we can start playback immediately
                                 // without waiting for the full timeout.
                                 val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(
-                                    result.data, installedAddonOrder
+                                    result.data, installedAddonOrder, pluginOrder
                                 )
                                 val allStreams = orderedStreams.flatMap { it.streams }
                                 val earlyMatch = StreamAutoPlaySelector.selectAutoPlayStream(
