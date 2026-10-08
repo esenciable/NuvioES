@@ -31,4 +31,20 @@ directo con el portal (misma arquitectura que Xuper demostró client-side, pero 
 - El addon server-side sigue existiendo para quien lo use; este feature no lo toca.
 
 ## Evidencia
-(commits por fase se registran acá)
+- `c0bee1c91` — M1 (core: crypto, device, session, portal, facade) + 13 tests.
+- `42b1385dd` — M2 + M3 (sentinel `magis://native-live`, catálogos, playback con headers firmados y
+  rotación de CDNs).
+- `0f531bb54` — **bugfix de M1**: `reauthenticate()` tomaba el `Mutex` y llamaba `ensureAnonymous()`,
+  que toma el mismo `Mutex` (no reentrante) → deadlock en el primer `PortalError`; el live quedaba
+  clavado en "Looking for channels..." sin error ni log. Reparado fuera del lock + `MagisSessionTest`
+  (RED: timeout de 5s; GREEN: 3/3).
+- **M5 verificado en device (2026-10-07)**: pantalla Live TV con **988 canales** (44 ocultos por el
+  filtro adulto por keywords), chips por categoría navegables (Deportes, Cine y Series, Venezuela,
+  Colombia…) y canal resuelto con la etiqueta de fuente "Magis". Playback real: canal 1 (ECDF)
+  reproduciendo **11+ min** cruzando la ventana de firma de 300 s, y zap en pantalla completa a un
+  segundo canal con **5.3+ min** sostenidos. Sin `PlaybackException` ni 401/403 del CDN en el log.
+  Pendiente honesto: el tercer zap quedó inconcluso porque se colgó el **emulador** (pantalla negra y
+  logcat congelado, sin FATAL ni error de player) y hubo que reiniciarlo.
+- `40d3041a6` — fix del bridge de plugins (Content-Type case-sensitive) que afectaba al VOD de Magis
+  vía plugin; ver la feature doc `premiumtv-live-native.md` para el seam, y el topic
+  `bugfix/plugin-content-type-case` en memoria.
