@@ -158,6 +158,107 @@ class MagisVodSelectionTest {
         assertEquals("c2", magisSelectCandidate(byViewPoint, "Coco", isSeries = false)?.optString("contentId"))
     }
 
+    // --- coverage / year / portal-score selection rules (parity with flat-magis-core.js) ---
+
+    private fun itemWith(contentId: String, name: String, releaseTime: String? = null, score: Int? = null, programType: String = "") =
+        JSONObject().put("contentId", contentId).put("name", name).put("programType", programType).apply {
+            releaseTime?.let { put("releaseTime", it) }
+            score?.let { put("score", it) }
+        }
+
+    @Test
+    fun `selectCandidate rejects a candidate sharing only one word of the title`() {
+        // The Dune/Dunas bug: the portal's ONLY candidate shares a single token with the
+        // requested title — coverage 1/3 is under the minimum, so it must be REJECTED (null),
+        // never accepted blindly because it is the only one.
+        val items = listOf(itemWith("tuareg", "Tuaregs, los guerreros de las dunas"))
+        assertNull(magisSelectCandidate(items, "Los Puentes de Madison", isSeries = false))
+    }
+
+    @Test
+    fun `selectCandidate rejects a candidate from the wrong year and accepts within one`() {
+        val wrong = listOf(itemWith("tuareg", "Dune", releaseTime = "2013-08-03"))
+        assertNull(magisSelectCandidate(wrong, "Dune", isSeries = false, year = 1984))
+        // ±1 year of release-date drift is accepted.
+        val close = listOf(itemWith("d84", "Dune", releaseTime = "1983-12-01"))
+        assertEquals("d84", magisSelectCandidate(close, "Dune", isSeries = false, year = 1984)?.optString("contentId"))
+        val otherSide = listOf(itemWith("d85", "Dune", releaseTime = "1985-01-07"))
+        assertEquals("d85", magisSelectCandidate(otherSide, "Dune", isSeries = false, year = 1984)?.optString("contentId"))
+    }
+
+    @Test
+    fun `selectCandidate does not apply a year the portal cannot verify`() {
+        // No releaseTime on the candidate: the year gate cannot fire, selection proceeds.
+        val noDate = listOf(itemWith("nodate", "Dune"))
+        assertEquals("nodate", magisSelectCandidate(noDate, "Dune", isSeries = false, year = 1984)?.optString("contentId"))
+        // No requested year: no gate at all.
+        val wrong = listOf(itemWith("tuareg", "Dune", releaseTime = "2013-08-03"))
+        assertEquals("tuareg", magisSelectCandidate(wrong, "Dune", isSeries = false, year = null)?.optString("contentId"))
+        // A releaseTime the parser cannot read is treated like a missing one.
+        val garbage = listOf(itemWith("g", "Dune", releaseTime = "no-se-que"))
+        assertEquals("g", magisSelectCandidate(garbage, "Dune", isSeries = false, year = 1984)?.optString("contentId"))
+    }
+
+    @Test
+    fun `selectCandidate breaks coverage ties with the portal score`() {
+        val items = listOf(
+            itemWith("weak", "Dune", score = 5),
+            itemWith("strong", "Dune", score = 99),
+        )
+        assertEquals("strong", magisSelectCandidate(items, "Dune", isSeries = false)?.optString("contentId"))
+    }
+
+    @Test
+    fun `selectCandidate prefers coverage over the portal score`() {
+        val items = listOf(
+            itemWith("full", "Coco y el Mundo", score = 1),
+            itemWith("partial", "Coco", score = 99),
+        )
+        assertEquals("full", magisSelectCandidate(items, "Coco y el Mundo", isSeries = false)?.optString("contentId"))
+    }
+
+    @Test
+    fun `selectCandidate returns null when every candidate is rejected, not the best of a bad lot`() {
+        // All wrong year: nothing usable → null, so the caller can try the original title.
+        val wrongYears = listOf(
+            itemWith("a", "Dune", releaseTime = "2013-08-03"),
+            itemWith("b", "Dune", releaseTime = "2021-10-22"),
+        )
+        assertNull(magisSelectCandidate(wrongYears, "Dune", isSeries = false, year = 1984))
+        assertNull(magisSelectCandidate(emptyList(), "Dune", isSeries = false, year = 1984))
+    }
+
+    @Test
+    fun `selectCandidate still filters by programType for a series`() {
+        val items = listOf(
+            itemWith("movie", "Dune", programType = "movie", score = 99),
+            itemWith("series", "Dune", programType = "series", score = 1),
+        )
+        assertEquals("series", magisSelectCandidate(items, "Dune", isSeries = true)?.optString("contentId"))
+    }
+
+    @Test
+    fun `selectCandidate enforces the plugin's 0_6 coverage minimum`() {
+        // Parity: MAGIS_MIN_COVERAGE matches the plugin's MAGIS_MIN_COVERAGE (0.6) in
+        // flat-magis-core.js — 2/4 tokens (0.5) is UNDER the gate, 3/4 (0.75) passes.
+        val half = listOf(itemWith("half", "Guerra Galaxias Amor"))
+        assertNull(magisSelectCandidate(half, "Guerra de las Galaxias El Imperio", isSeries = false))
+        val threeQuarters = listOf(itemWith("threeq", "Guerra Galaxias Imperio Amor"))
+        assertEquals(
+            "threeq",
+            magisSelectCandidate(threeQuarters, "Guerra de las Galaxias El Imperio", isSeries = false)?.optString("contentId"),
+        )
+    }
+
+    @Test
+    fun `releaseTime year parses the ISO date head and rejects garbage`() {
+        assertEquals(2021, magisReleaseYear("2021-10-22"))
+        assertEquals(2013, magisReleaseYear("2013-08-03"))
+        assertEquals(1984, magisReleaseYear("1984"))
+        assertNull(magisReleaseYear(""))
+        assertNull(magisReleaseYear("no-se-que"))
+    }
+
     // --- magisEpisodeId ----------------------------------------------------------
 
     @Test

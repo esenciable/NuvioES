@@ -211,7 +211,8 @@ class MagisVodClientTest {
                     if (searchesSoFar == 1) {
                         searchAnswer(searchItem("", "Coco")) // no contentId → unusable
                     } else {
-                        searchAnswer(searchItem("c-orig", "Coco (2017)"))
+                        // Must clear the 0.6 coverage gate over "Coco Original".
+                        searchAnswer(searchItem("c-orig", "Coco Original (2017)"))
                     }
                 },
                 "v10/startPlayVOD" to { playAnswer("media-3", videoFormat = "mp4") },
@@ -226,6 +227,69 @@ class MagisVodClientTest {
         assertEquals(2, searches.size)
         assertEquals("Coco", searches[0].bean["value"])
         assertEquals("Coco Original", searches[1].bean["value"])
+    }
+
+    @Test(timeout = 10_000)
+    fun `a weak candidate is rejected so the original-title fallback gets its turn`() = runTest {
+        // The Dune/Dunas bug: the portal's candidate ("…de las dunas") even SHARES the token
+        // with the requested "Dunas" — coverage passes, the 1984-vs-2013 year gate rejects it,
+        // and the client moves on to the original-title search instead of playing another film.
+        var searchesSoFar = 0
+        val portal = FakePortal(
+            script = mutableMapOf(
+                "v3/searchByName" to {
+                    searchesSoFar++
+                    if (searchesSoFar == 1) {
+                        searchAnswer(
+                            searchItem("tuareg", "Tuaregs, los guerreros de las dunas").put("releaseTime", "2013-08-03"),
+                        )
+                    } else {
+                        searchAnswer(searchItem("d84", "Dune").put("releaseTime", "1983-12-01"))
+                    }
+                },
+                "v10/startPlayVOD" to { playAnswer("media-4", videoFormat = "mp4") },
+                "v14/getSlbInfo" to { slbAnswer() },
+            ),
+        )
+        val lookup = FakeTitleLookup(MagisTitleInfo(title = "Dunas", originalTitle = "Dune", year = 1984))
+        val result = client(portal, lookup = lookup).resolveDetailed("tt0087182", "movie")
+
+        assertTrue(result is MagisResult.Ok)
+        val play = portal.calls.first { it.path == "v10/startPlayVOD" }
+        assertEquals("d84", play.bean["contentId"])
+        val searches = portal.calls.filter { it.path == "v3/searchByName" }
+        assertEquals(2, searches.size)
+    }
+
+    @Test(timeout = 10_000)
+    fun `the year from the title lookup rejects a wrong-year candidate and falls through`() = runTest {
+        // tt0087182 (Dune 1984): the portal's only candidate is a 2013 film — the year the
+        // lookup carried must gate it, and when BOTH titles fail the error is typed NO_CANDIDATE.
+        val portal = FakePortal(
+            script = mutableMapOf(
+                "v3/searchByName" to { searchAnswer(searchItem("tuareg", "Dune", programType = "movie").put("releaseTime", "2013-08-03")) },
+            ),
+        )
+        val lookup = FakeTitleLookup(MagisTitleInfo(title = "Dunas", originalTitle = "Dune", year = 1984))
+        val result = client(portal, lookup = lookup).resolveDetailed("tt0087182", "movie")
+
+        assertTrue(result is MagisResult.PortalError)
+        assertEquals(MagisVodClient.NO_CANDIDATE, (result as MagisResult.PortalError).code)
+        assertEquals("both title attempts ran", 2, portal.calls.count { it.path == "v3/searchByName" })
+    }
+
+    @Test(timeout = 10_000)
+    fun `a candidate within one year of the lookup year still resolves`() = runTest {
+        val portal = FakePortal(
+            script = mutableMapOf(
+                "v3/searchByName" to { searchAnswer(searchItem("d84", "Dune").put("releaseTime", "1983-12-01")) },
+                "v10/startPlayVOD" to { playAnswer("media-5", videoFormat = "mp4") },
+                "v14/getSlbInfo" to { slbAnswer() },
+            ),
+        )
+        val lookup = FakeTitleLookup(MagisTitleInfo(title = "Dune", originalTitle = "Dune", year = 1984))
+        val result = client(portal, lookup = lookup).resolveDetailed("tt0087182", "movie")
+        assertTrue(result is MagisResult.Ok)
     }
 
     // --- typed errors --------------------------------------------------------

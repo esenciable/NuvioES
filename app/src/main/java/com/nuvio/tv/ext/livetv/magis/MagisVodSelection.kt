@@ -9,7 +9,9 @@ import java.text.Normalizer
  * (`esencial-play-providers/lib/flat-magis-core.js`: `magisPortalQuery`, `magisTokens`,
  * `magisSearchItems`, `magisSelectCandidate`, `magisEpisodeId`, `magisScoreMedia`,
  * `magisBestMedia`, `magisIsCfl`, `magisVodCdn`) and the addon's `src/magis/resolve.ts` for the
- * SLB cache. These heuristics are measured against the real portal — do not "improve" them.
+ * SLB cache. These heuristics are measured against the real portal. The 2026-06 candidate fix
+ * (coverage minimum, ±1-year gate, portal-score tie-break) is a VERIFIED parity change applied
+ * to the plugin core in parallel — keep the two implementations identical.
  */
 
 /** The portal's series `programType` values (`MAGIS_SERIES_TYPES` in the reference). */
@@ -60,20 +62,60 @@ internal fun magisSearchItems(response: JSONObject): List<JSONObject> {
 }
 
 /**
- * Candidate selection: filter by `programType` compatible with the media type (falling back to
- * ALL items when the type filter empties the pool), drop items without `contentId`, and return
- * the first item with the MOST title-token hits (`name` → `viewPoint` → `alias`). `null` when
- * nothing is usable.
+ * Candidate selection. PARITY with `esencial-play-providers/lib/flat-magis-core.js`
+ * (`magisSelectCandidate`): the plugin received the SAME fix in parallel — these two
+ * implementations are the same decision written twice, keep the rule identical.
+ *
+ * Rules, in order:
+ *  1. Filter by `programType` compatible with the media type (falling back to ALL items when
+ *     the type filter empties the pool), drop items without `contentId`.
+ *  2. YEAR gate: when [year] is known and the candidate carries a parseable `releaseTime`,
+ *     require the candidate within ±1 year (release-date drift). An unverifiable year (missing
+ *     or garbage `releaseTime`) does NOT reject — the gate only fires on evidence.
+ *  3. COVERAGE gate: score by COVERAGE of the requested title (ratio of wanted tokens present,
+ *     `name` → `viewPoint` → `alias`) and require [MAGIS_MIN_COVERAGE]. This is the Dune/Dunas
+ *     fix: a weak single candidate must be REJECTED so the caller falls back to the original
+ *     title — returning nothing beats returning another film.
+ *  4. Among the survivors: highest coverage wins, the portal's own relevance `score` breaks
+ *     ties. `maxWithOrNull` keeps the FIRST maximal element, the same item the reference's
+ *     stable descending sort leaves at index 0.
+ *
+ * `null` when nothing passes — never the best of a bad lot.
  */
-internal fun magisSelectCandidate(items: List<JSONObject>, title: String, isSeries: Boolean): JSONObject? {
+/**
+ * Minimum COVERAGE of the requested title a candidate must reach to be accepted. PARITY with
+ * the plugin's `MAGIS_MIN_COVERAGE` in `esencial-play-providers/lib/flat-magis-core.js`: the
+ * value kept is 0.6 — the plugin's gate — raised from the earlier 0.5 draft when the two
+ * implementations were aligned (2026-10-09, option 4). Diff these constants together.
+ */
+internal const val MAGIS_MIN_COVERAGE = 0.6
+
+/** The candidate's release year out of the portal's ISO `releaseTime` (`2021-10-22` → 2021). */
+internal fun magisReleaseYear(releaseTime: String): Int? {
+    if (releaseTime.length < 4) return null
+    return releaseTime.substring(0, 4).toIntOrNull()?.takeIf { it > 0 }
+}
+
+internal fun magisSelectCandidate(
+    items: List<JSONObject>,
+    title: String,
+    isSeries: Boolean,
+    year: Int? = null,
+): JSONObject? {
     val wanted = magisTokens(title)
-    fun score(item: JSONObject): Int {
-        val name = sequenceOf("name", "viewPoint", "alias")
-            .map { item.flatStr(it) }
-            .firstOrNull { it.isNotEmpty() }
-            .orEmpty()
-        val itemTokens = magisTokens(name)
-        return wanted.count { itemTokens.contains(it) }
+    fun displayName(item: JSONObject): String = sequenceOf("name", "viewPoint", "alias")
+        .map { item.flatStr(it) }
+        .firstOrNull { it.isNotEmpty() }
+        .orEmpty()
+    fun coverage(item: JSONObject): Double {
+        if (wanted.isEmpty()) return 0.0
+        val itemTokens = magisTokens(displayName(item))
+        return wanted.count { itemTokens.contains(it) }.toDouble() / wanted.size
+    }
+    fun yearMatches(item: JSONObject): Boolean {
+        if (year == null) return true
+        val itemYear = magisReleaseYear(item.flatStr("releaseTime")) ?: return true
+        return Math.abs(itemYear - year) <= 1
     }
     val compatible = items.filter { item ->
         val programType = item.flatStr("programType")
@@ -81,10 +123,12 @@ internal fun magisSelectCandidate(items: List<JSONObject>, title: String, isSeri
         else programType.isEmpty() || programType !in MAGIS_SERIES_TYPES
     }
     val pool = compatible.ifEmpty { items }
-    val usable = pool.filter { it.flatStr("contentId").isNotEmpty() }
-    // `maxByOrNull` returns the FIRST maximal element: the same item the reference's stable
-    // descending sort leaves at index 0.
-    return usable.maxByOrNull { score(it) }
+    return pool
+        .filter { it.flatStr("contentId").isNotEmpty() }
+        .filter { yearMatches(it) }
+        .mapNotNull { item -> coverage(item).takeIf { it >= MAGIS_MIN_COVERAGE }?.let { item to it } }
+        .maxWithOrNull(compareBy({ it.second }, { it.first.optDouble("score", 0.0) }))
+        ?.first
 }
 
 /**

@@ -116,3 +116,43 @@ idénticas a las del A/B de V1 (mismo criterio de corrección):
 verificación en vivo a 150 ms no dio ni un solo rechazo en 10 resolves consecutivos — 150 ms es
 cortesía sobrante, no requisito del portal — y devuelve la mayor parte de los ~900 ms fríos /
 ~370-540 ms calientes medidos. Si el portal empieza a rechazar, el revert es una constante.
+
+### Corrección de selección (paridad con el plugin): Dune 1984 jugaba otra película
+El dueño reportó (y se reprodujo contra el portal VIVO) que `tt0087182` (Dune 1984) resolvía la
+candidata "Tuaregs, los guerreros de las dunas" (2013): `magisSelectCandidate` puntuaba por CONTEO
+de tokens, sin año ni `score` del portal, y aceptaba a ciegas la única candidata. Reglas nuevas
+(2026-10-09, MISMA decisión escrita dos veces: aquí y en `flat-magis-core.js`):
+1. COBERTURA del título pedido (proporción de tokens presentes), con mínimo `MAGIS_MIN_COVERAGE`
+   (0.5): una candidata débil se RECHAZA para que el caller pruebe el título original — mejor
+   nada que otra película.
+2. Año ±1 contra `releaseTime` del portal cuando el lookup trae año (`MagisTitleInfo.year`, llenado
+   por `TmdbTitleLookup` en la MISMA llamada de detalles de TMDB). Sin fecha verificable no hay
+   gate. `magisReleaseYear` parsea el ISO (`2021-10-22` → 2021).
+3. `score` del portal como DESEMPATE entre candidatas de igual cobertura (la cobertura manda).
+4. Igual que antes: filtro `programType` series/película y requisito de `contentId`.
+5. UMBRAL de cobertura en paridad EXACTA con el plugin: `MAGIS_MIN_COVERAGE = 0.6` (el valor del
+   `MAGIS_MIN_COVERAGE` de `flat-magis-core.js`; el borrador aquí quedó en 0.5 y se alineó a 0.6
+   el 2026-10-09, opción 4).
+
+**Causa raíz del caso tt1160419 (encontrada por el dueño, no era la selección): era de IDIOMA.**
+`TmdbTitleLookup` pedía los detalles de TMDB sin `language` → TMDB contestaba el título en
+inglés ("Dune") y el portal (catálogo español) lista "Duna": el único candidato que compartía
+palabra era el mockbuster. El plugin pide TMDB con `language=es-MX`. FIX: ambas llamadas
+(`getMovieDetails`/`getTvDetails`) llevan `es-MX` (`TmdbTitleLookup.TMDB_LANGUAGE`); la respuesta
+en español sigue trayendo `original_title`/`original_name` ("Dune"), así que el par queda
+("Duna", "Dune") como el `flatDetail` del plugin y el fallback de título original sigue vivo.
+Cero reglas nuevas de selección, nada que tocar en el plugin.
+
+Verificado en vivo (harness temporal JVM borrado tras correr, stack real desde BuildConfig):
+
+| id | lookup (TMDB, es-MX) | seleccionado en vivo | resultado |
+| --- | --- | --- | --- |
+| tt1160419 (Dune 2021) | ("Duna", "Dune"), año 2021 | **Duna** rel=2021-10-22, score=8.2, dir=Denis Villeneuve | ✔ ANTES (lookup en inglés): mockbuster "Exoplaneta Dune en Peligro" (`A8876A62…`); DESPUÉS: `2753F184…`. El propio pool en vivo traía a "Tuaregs…" y el gate lo apartó |
+| tt0087182 (Dune 1984) | ("Dunas", "Dune"), año 1984 | "Dunas" → la ÚNICA candidata era Tuaregs (2013) y se RECHAZÓ → fallback al original → **Dune** rel=1985-03-04, dir=David Lynch | ✔ URL `EBFEC721…` (la película de 1984), igual que en la corrida pre-language |
+| tt2380307 (Coco) | ("Coco", "Coco"), año 2017 | **Coco** rel=2017-11-22, score=8.4 | ✔ URL idéntica a la del A/B de V1 (`8D5CCDD3…`) |
+
+Hallazgo del caso tt1160419 (RESUELTO por el fix de idioma, ver arriba): el diagnóstico inicial lo
+atribuyó a la regla de selección y propuso un piso de `score` (las DOS selecciones erróneas
+observadas tenían `score` 5.0, el mínimo del pool). El dueño identificó la causa real: idioma de
+TMDB. El piso de score NO se implementó; quedó descartado como innecesario con el lookup en
+es-MX.

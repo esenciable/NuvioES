@@ -20,7 +20,8 @@ data class MagisVodStream(
  * Call sequence for `resolveDetailed`:
  *  1. TMDB title lookup (fork's own TMDB stack behind [MagisTitleLookup]);
  *  2. `v3/searchByName` (pageSize 10) per title candidate — localized first, original as
- *     fallback — selecting by title tokens;
+ *     fallback — selecting by title COVERAGE with a ±1-year gate and the portal `score` as
+ *     tie-breaker (parity fix with the plugin's `magisSelectCandidate`);
  *  3. series only: `v4/getItemData` → the episode's `contentId`;
  *  4. `v10/startPlayVOD` → `episodeList[0]` → best media (h264 > other, mp4 > other) → license;
  *  5. `v14/getSlbInfo` → the `vod` CDN entry with a `free` + `cfl` url → base + auth. This call
@@ -92,7 +93,9 @@ internal class MagisVodClient(
                 )
             }
             val items = response.getOrNull()?.let { magisSearchItems(it) }
-            val candidate = items?.let { magisSelectCandidate(it, title, isSeries) }
+            // The year rides on BOTH title attempts (localized and original): the ±1-year gate
+            // is what keeps a weak same-name candidate from being accepted blindly.
+            val candidate = items?.let { magisSelectCandidate(it, title, isSeries, info.year) }
             if (candidate != null) {
                 selected = candidate
                 break
