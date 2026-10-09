@@ -60,8 +60,15 @@ Lo que ya se recortó del plugin (mint ∥ TMDB, payload 20→10) bajó 1.5s →
       (b) el tiempo real de cada uno. Reportar **medido**, no proyectado. Después, en device.
 
 ## Decisiones
-- El plugin de Magis **se queda** como fallback para builds de Nuvio sin este código (stock), no se
-  borra.
+- **El scraper de Magis se queda ENCENDIDO en el manifest** (corregido el 2026-10-08 después de
+  apagarlo por error): es la **capa portátil** — hace que Magis funcione en cualquier Nuvio, incluido
+  stock, que no tiene esta fuente nativa. Apagarlo dejaba sin Magis a todo el que no use el fork.
+- **Se convive con un dedup por URL**: los dos caminos resuelven la MISMA URL exacta (verificado byte a
+  byte), así que con el scraper encendido el fork mostraría dos filas idénticas. La app descarta un
+  stream cuya URL ya vino de un grupo anterior; como la fuente nativa va primero por `pluginOrder`,
+  sobrevive la nativa (rápida) y la del scraper desaparece de la vista. **El respaldo queda invisible
+  pero real**: si la vía nativa falla, la del scraper es la única y Magis igual funciona.
+- El plugin **no se borra**: es el respaldo del fork y la única vía en builds de Nuvio sin este código.
 - Los heuristics de selección se portan 1:1 (ya están verificados en el plugin y en el addon); no se
   reinventan. Donde el fork ya tenga un servicio (TMDB), se reusa.
 
