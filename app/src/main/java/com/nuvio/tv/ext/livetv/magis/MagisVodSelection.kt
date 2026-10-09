@@ -148,6 +148,37 @@ internal fun magisEpisodeId(detail: JSONObject, wanted: Int): String? {
 }
 
 /**
+ * Qué temporada representa este detalle, según la lista del propio portal (port of the addon's
+ * `seasonOfDetail` in `kino-light-addon/src/magis/provider.ts`; the same fix is landing in
+ * parallel on `esencial-play-providers/lib/flat-magis-core.js` + `flat/magis.js` — these
+ * implementations are one decision written twice, keep the rules identical).
+ *
+ * La entrada de `assetData.sameSeasonSeriesList` cuyo `contentId` es el pedido. Una lista VACÍA
+ * significa temporada 1 — una serie de una sola temporada no aparece en su propia lista —, no "no
+ * sé cuál es". `null` cuando la lista no identifica al detalle pedido.
+ */
+internal fun magisSeasonOfDetail(detail: JSONObject, seriesContentId: String): Int? {
+    val assetData = detail.optJSONObject("assetData") ?: JSONObject()
+    val seasons = magisObjects(assetData.optJSONArray("sameSeasonSeriesList"))
+    if (seasons.isEmpty()) return 1
+    val own = seasons.firstOrNull { it.flatStr("contentId") == seriesContentId } ?: return null
+    val seasonNumber = own.optDouble("seasonNumber", Double.NaN)
+    return if (seasonNumber.isNaN()) null else seasonNumber.toInt()
+}
+
+/**
+ * El contentId de la temporada pedida, tal como lo publica el portal (port of the addon's
+ * `contentIdForSeason`, same parity note as [magisSeasonOfDetail]). `null` cuando la lista no
+ * trae esa temporada.
+ */
+internal fun magisContentIdForSeason(detail: JSONObject, wanted: Int): String? {
+    val assetData = detail.optJSONObject("assetData") ?: JSONObject()
+    val seasons = magisObjects(assetData.optJSONArray("sameSeasonSeriesList"))
+    val match = seasons.firstOrNull { it.optDouble("seasonNumber", Double.NaN) == wanted.toDouble() }
+    return match?.let { it.flatStr("contentId").takeIf { id -> id.isNotEmpty() } }
+}
+
+/**
  * Media score (the reference's `magisScoreMedia`): codec dominates (h264 = 0, else 2), then
  * container (mp4 = 0, else 1), then height as a small tie-break. LOWER wins.
  */

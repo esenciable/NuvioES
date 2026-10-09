@@ -36,9 +36,12 @@ class MagisVodClientTest {
         }
     }
 
-    /** Scripted portal: per-path answers, recording every (path, bean) pair. */
+    /** Scripted portal: per-path answers, recording every (path, bean) pair. When [dynamicScript]
+     *  is set it runs FIRST and can answer per-call (e.g. `v4/getItemData` dispatched by
+     *  `bean["contentId"]`, which the season flow needs: the same path is called twice). */
     private class FakePortal(
         private val script: MutableMap<String, MagisResult<JSONObject>.() -> MagisResult<JSONObject>> = mutableMapOf(),
+        private val dynamicScript: ((path: String, bean: Map<String, Any?>) -> MagisResult<JSONObject>?)? = null,
     ) : MagisPortalLike {
         data class Call(val path: String, val bean: Map<String, Any?>)
 
@@ -53,6 +56,7 @@ class MagisVodClientTest {
             sn: String?,
         ): MagisResult<JSONObject> {
             calls += Call(path, bean)
+            dynamicScript?.invoke(path, bean)?.let { return it }
             val default: MagisResult<JSONObject>.() -> MagisResult<JSONObject> = {
                 MagisResult.Ok(JSONObject(mapOf("userId" to "u1", "userToken" to "t1", "snToken" to "ST-fake")))
             }
@@ -83,6 +87,26 @@ class MagisVodClientTest {
                 "simpleProgramList",
                 JSONArray().apply { episodes.forEach { (n, id) -> put(JSONObject().put("seriesNumber", n).put("contentId", id)) } },
             ),
+        ),
+    )
+
+    /** A series detail WITH the portal's season list (`sameSeasonSeriesList`) and its own
+     *  episode list — the shape the real portal answers for a multi-season series. */
+    private fun seasonDetail(
+        seasons: List<Pair<Int, String>>,
+        episodes: List<Pair<Int, String>>,
+    ) = MagisResult.Ok(
+        JSONObject().put(
+            "assetData",
+            JSONObject()
+                .put(
+                    "sameSeasonSeriesList",
+                    JSONArray().apply { seasons.forEach { (n, id) -> put(JSONObject().put("seasonNumber", n).put("contentId", id)) } },
+                )
+                .put(
+                    "simpleProgramList",
+                    JSONArray().apply { episodes.forEach { (n, id) -> put(JSONObject().put("seriesNumber", n).put("contentId", id)) } },
+                ),
         ),
     )
 
@@ -290,6 +314,157 @@ class MagisVodClientTest {
         val lookup = FakeTitleLookup(MagisTitleInfo(title = "Dune", originalTitle = "Dune", year = 1984))
         val result = client(portal, lookup = lookup).resolveDetailed("tt0087182", "movie")
         assertTrue(result is MagisResult.Ok)
+    }
+
+    // --- series and seasons (the Ted Lasso regression) -----------------------
+
+    @Test(timeout = 10_000)
+    fun `a two-season series resolves S2E1 to a DIFFERENT episode than S1E1`() = runTest {
+        // The core regression: the search hit's detail is season 1's, and the portal lists
+        // season 2 under its OWN contentId. The season's detail REPLACES the first one and its
+        // contentId is what travels as seriesContentId into startPlayVOD.
+        val seasons = listOf(1 to "c-series", 2 to "c-s2")
+        val portal = FakePortal(
+            dynamicScript = { path, bean ->
+                when {
+                    path == "v4/getItemData" && bean["contentId"] == "c-series" ->
+                        seasonDetail(seasons, listOf(1 to "ep-s1e1", 2 to "ep-s1e2"))
+                    path == "v4/getItemData" && bean["contentId"] == "c-s2" ->
+                        seasonDetail(seasons, listOf(1 to "ep-s2e1", 2 to "ep-s2e2"))
+                    path == "v10/startPlayVOD" -> playAnswer("media-s", videoFormat = "mp4")
+                    path == "v14/getSlbInfo" -> slbAnswer()
+                    path == "v3/searchByName" -> searchAnswer(searchItem("c-series", "Ted Lasso", programType = "series"))
+                    else -> null
+                }
+            },
+        )
+        val c = client(portal, lookup = FakeTitleLookup(MagisTitleInfo("Ted Lasso", "Ted Lasso")))
+
+        val s2 = c.resolveDetailed("1234", "tv", season = 2, episode = 1)
+        assertTrue("S2E1 debe resolver", s2 is MagisResult.Ok)
+        val playS2 = portal.calls.last { it.path == "v10/startPlayVOD" }
+        assertEquals("ep-s2e1", playS2.bean["contentId"])
+        assertEquals("la temporada pedida viaja como seriesContentId", "c-s2", playS2.bean["seriesContentId"])
+        assertEquals(2, portal.calls.count { it.path == "v4/getItemData" })
+
+        val s1 = c.resolveDetailed("1234", "tv", season = 1, episode = 1)
+        assertTrue("S1E1 debe resolver", s1 is MagisResult.Ok)
+        val playS1 = portal.calls.last { it.path == "v10/startPlayVOD" }
+        assertEquals("ep-s1e1", playS1.bean["contentId"])
+        assertEquals("c-series", playS1.bean["seriesContentId"])
+        // S1 needed NO refetch: the searched detail already IS season 1.
+        assertEquals(3, portal.calls.count { it.path == "v4/getItemData" })
+
+        // The two requested episodes must be DIFFERENT streams — the bug had them identical.
+        assertTrue(playS1.bean["contentId"] != playS2.bean["contentId"])
+    }
+
+    @Test(timeout = 10_000)
+    fun `an empty season list resolves season 1 and returns nothing for season 2`() = runTest {
+        // A single-season series is NOT listed in its own sameSeasonSeriesList: empty means
+        // "this is season 1", not "unknown".
+        val portal = FakePortal(
+            script = mutableMapOf(
+                "v3/searchByName" to { searchAnswer(searchItem("c-series", "Ted Lasso", programType = "series")) },
+                "v4/getItemData" to {
+                    MagisResult.Ok(
+                        JSONObject().put(
+                            "assetData",
+                            JSONObject().put(
+                                "sameSeasonSeriesList",
+                                JSONArray(),
+                            ).put(
+                                "simpleProgramList",
+                                JSONArray().put(JSONObject().put("seriesNumber", 1).put("contentId", "ep-1")),
+                            ),
+                        ),
+                    )
+                },
+                "v10/startPlayVOD" to { playAnswer("media-1", videoFormat = "mp4") },
+                "v14/getSlbInfo" to { slbAnswer() },
+            ),
+        )
+        val c = client(portal, lookup = FakeTitleLookup(MagisTitleInfo("Ted Lasso", "Ted Lasso")))
+
+        val s1 = c.resolveDetailed("1234", "tv", season = 1, episode = 1)
+        assertTrue(s1 is MagisResult.Ok)
+        val play1 = portal.calls.last { it.path == "v10/startPlayVOD" }
+        assertEquals("ep-1", play1.bean["contentId"])
+        assertEquals("c-series", play1.bean["seriesContentId"])
+        assertEquals(1, portal.calls.count { it.path == "v4/getItemData" })
+
+        portal.calls.clear()
+        val s2 = c.resolveDetailed("1234", "tv", season = 2, episode = 1)
+        assertTrue("temporada 2 de una serie de una temporada → nada", s2 is MagisResult.PortalError)
+        assertEquals(MagisVodClient.NO_EPISODE, (s2 as MagisResult.PortalError).code)
+        assertTrue("sin startPlayVOD", portal.calls.none { it.path == "v10/startPlayVOD" })
+        assertEquals(1, portal.calls.count { it.path == "v4/getItemData" })
+    }
+
+    @Test(timeout = 10_000)
+    fun `a season absent from a non-empty list returns NOTHING, never another season's episode`() = runTest {
+        val seasons = listOf(1 to "c-series", 2 to "c-s2")
+        val portal = FakePortal(
+            dynamicScript = { path, bean ->
+                when {
+                    path == "v4/getItemData" && bean["contentId"] == "c-series" ->
+                        seasonDetail(seasons, listOf(1 to "ep-s1e1"))
+                    path == "v3/searchByName" -> searchAnswer(searchItem("c-series", "Ted Lasso", programType = "series"))
+                    else -> null
+                }
+            },
+        )
+        val result = client(portal, lookup = FakeTitleLookup(MagisTitleInfo("Ted Lasso", "Ted Lasso")))
+            .resolveDetailed("1234", "tv", season = 3, episode = 1)
+
+        assertTrue(result is MagisResult.PortalError)
+        assertEquals(MagisVodClient.NO_EPISODE, (result as MagisResult.PortalError).code)
+        assertTrue("sin startPlayVOD", portal.calls.none { it.path == "v10/startPlayVOD" })
+        // No blind refetch either: the destination season does not exist.
+        assertEquals(1, portal.calls.count { it.path == "v4/getItemData" })
+    }
+
+    @Test(timeout = 10_000)
+    fun `episode 0 still means the first episode`() = runTest {
+        val portal = FakePortal(
+            script = mutableMapOf(
+                "v3/searchByName" to { searchAnswer(searchItem("c-series", "Ted Lasso", programType = "series")) },
+                "v4/getItemData" to { itemDataAnswer(1 to "ep-1", 2 to "ep-2") },
+                "v10/startPlayVOD" to { playAnswer("media-0", videoFormat = "mp4") },
+                "v14/getSlbInfo" to { slbAnswer() },
+            ),
+        )
+        val result = client(portal, lookup = FakeTitleLookup(MagisTitleInfo("Ted Lasso", "Ted Lasso")))
+            .resolveDetailed("1234", "tv", season = 0, episode = 0)
+        assertTrue(result is MagisResult.Ok)
+        val play = portal.calls.first { it.path == "v10/startPlayVOD" }
+        assertEquals("ep-1", play.bean["contentId"])
+    }
+
+    // --- season helpers (ports of the addon's seasonOfDetail/contentIdForSeason) ---
+
+    @Test
+    fun `magisSeasonOfDetail reads the season out of the portal's own list`() {
+        val seasons = listOf(1 to "c-series", 2 to "c-s2")
+        val detail = seasonDetail(seasons, listOf(1 to "ep-1")).let { (it as MagisResult.Ok).data }
+        assertEquals(1, magisSeasonOfDetail(detail, "c-series"))
+        assertEquals(2, magisSeasonOfDetail(detail, "c-s2"))
+        assertNull("contentId ajeno a la lista → no se sabe", magisSeasonOfDetail(detail, "otro"))
+
+        // Empty list = season 1: a single-season series is not listed in its own list.
+        val single = MagisResult.Ok(
+            JSONObject().put("assetData", JSONObject().put("sameSeasonSeriesList", JSONArray())),
+        ).let { (it as MagisResult.Ok).data }
+        assertEquals(1, magisSeasonOfDetail(single, "c-x"))
+    }
+
+    @Test
+    fun `magisContentIdForSeason returns the listed season's contentId or null`() {
+        val detail = seasonDetail(listOf(1 to "c-series", 2 to "c-s2"), listOf(1 to "ep-1")).let { (it as MagisResult.Ok).data }
+        assertEquals("c-s2", magisContentIdForSeason(detail, 2))
+        assertEquals("c-series", magisContentIdForSeason(detail, 1))
+        assertNull(magisContentIdForSeason(detail, 3))
+        assertNull(magisContentIdForSeason(detail, 0))
     }
 
     // --- typed errors --------------------------------------------------------

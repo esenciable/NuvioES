@@ -156,3 +156,31 @@ atribuyó a la regla de selección y propuso un piso de `score` (las DOS selecci
 observadas tenían `score` 5.0, el mínimo del pool). El dueño identificó la causa real: idioma de
 TMDB. El piso de score NO se implementó; quedó descartado como innecesario con el lookup en
 es-MX.
+
+### Corrección de TEMPORADAS (paridad con el addon): Ted Lasso S2E1 reproducía S1E1
+El dueño reportó que las series se resolvían por temporada roto: S1E1 bien, S2E1 reproducía S1E1.
+Causa raíz (descrita VERBATIM en el código del addon, `kino-light-addon/src/magis/provider.ts`
+`episodeFor`): el portal entrega los capítulos de UNA temporada por detalle y lista las demás en
+`assetData.sameSeasonSeriesList` con su propio `contentId`; si no se pide el de la temporada
+pedida, el episodio se elige dentro de la temporada que ya tenía el detalle — la 1.
+
+Port 1:1 de `episodeFor` + helpers (`seasonOfDetail`, `contentIdForSeason`, `episodeFrom`) — MISMA
+decisión escrita dos veces (en paralelo también en `esencial-play-providers/lib/flat-magis-core.js`
++ `flat/magis.js`), reglas idénticas:
+1. `v4/getItemData(seriesContentId)` → `magisSeasonOfDetail` (lista VACÍA = temporada 1: una serie
+   de una sola temporada no aparece en su propia lista) y `magisContentIdForSeason`.
+2. Si la temporada pedida vive bajo OTRO contentId, se repite `v4/getItemData` con él y ese detalle
+   REEMPLAZA al primero; el episodio sale de ESE detalle.
+3. Temporada ausente y detalle identificado como OTRA temporada → SIN resultado (error tipado
+   `vod_no_episode`): mejor nada que el capítulo de otra temporada. Si la lista no identifica al
+   detalle (`current == null`) y no hay destino, el reference SIGUE con el detalle que ya tenía
+   (perder capítulos sería peor).
+4. El contentId de la TEMPORADA (no el del show) viaja como `seriesContentId` a `v10/startPlayVOD`:
+   la resolución de licencia/playCode va acotada por él.
+
+Verificado en vivo (harness temporal JVM borrado tras correr, stack real desde `BuildConfig`,
+mismo método que V1/V4a): **Ted Lasso S1E1 → `…/vod/47C947B369F64AB6A49525B7DE33F46B_media.ts`,
+S2E1 → `…/vod/93E32A7390964CF3A9538F2E1D186FD7_media.ts`** — DOS streams DISTINTOS, que es
+ejactamente lo que el bug rompía. Suite `com.nuvio.tv.ext.livetv.*`: 363 tests, 0 fallos (baseline
+357 + 6 nuevos: la regresión S2E1≠S1E1, lista vacía, temporada ausente, episodio 0, y los helpers
+puros).

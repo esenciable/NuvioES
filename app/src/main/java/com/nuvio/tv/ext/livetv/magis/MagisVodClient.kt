@@ -22,7 +22,11 @@ data class MagisVodStream(
  *  2. `v3/searchByName` (pageSize 10) per title candidate — localized first, original as
  *     fallback — selecting by title COVERAGE with a ±1-year gate and the portal `score` as
  *     tie-breaker (parity fix with the plugin's `magisSelectCandidate`);
- *  3. series only: `v4/getItemData` → the episode's `contentId`;
+ *  3. series only: `v4/getItemData` on the searched contentId → resolve the requested SEASON
+ *     from `assetData.sameSeasonSeriesList` (`magisSeasonOfDetail`/`magisContentIdForSeason`);
+ *     when the season lives under a DIFFERENT contentId, `v4/getItemData` again on it REPLACES
+ *     the detail and the season's contentId travels as `seriesContentId` into `startPlayVOD`
+ *     (the season-fix port, see the series branch below);
  *  4. `v10/startPlayVOD` → `episodeList[0]` → best media (h264 > other, mp4 > other) → license;
  *  5. `v14/getSlbInfo` → the `vod` CDN entry with a `free` + `cfl` url → base + auth. This call
  *     is CACHED with the addon's exact semantics ([MagisVodSlbCache]) keyed by the session's
@@ -48,8 +52,10 @@ internal class MagisVodClient(
 
     /**
      * Resolves [id] (numeric TMDB id or IMDb `tt…` id) into the playable stream. [season] and
-     * [episode] only matter for series; the portal selection uses the EPISODE number (the
-     * reference ignores the season — `Number(episode) || 0`).
+     * [episode] only matter for series: the SEASON is resolved first (the portal lists every
+     * season under its own contentId and `v4/getItemData` answers with ONE season's episodes),
+     * then the episode is picked by number inside that season's detail (`Number(episode) || 0`,
+     * 0 = first).
      */
     suspend fun resolveDetailed(
         id: String,
@@ -109,9 +115,14 @@ internal class MagisVodClient(
         var contentId = candidate.flatStr("contentId")
         var seriesContentId = ""
         if (isSeries) {
-            // 3. Series: the episode's own contentId.
+            // 3. Series: FIRST the season, then the episode inside it. PARITY with the addon's
+            //    `episodeFor` (kino-light-addon/src/magis/provider.ts) and the plugin's parallel
+            //    port (`esencial-play-providers/lib/flat-magis-core.js` + `flat/magis.js`) — one
+            //    decision written twice: al pedir el video hay que decirle al portal ESTA
+            //    temporada como `seriesContentId`, porque si no resuelve dentro de la que le
+            //    pasemos y la temporada 2 terminaba reproduciendo el capítulo de la 1.
             seriesContentId = contentId
-            val detail = session.withValidSession {
+            val first = session.withValidSession {
                 portal.call(
                     path = "v4/getItemData",
                     bean = mapOf(
@@ -125,9 +136,45 @@ internal class MagisVodClient(
                     userToken = session.userToken,
                 )
             }
-            val detailJson = detail.getOrNull() ?: return detail.asError()
-            contentId = magisEpisodeId(detailJson, episode)
-                ?: return MagisResult.PortalError(NO_EPISODE, "Magis no trajo el episodio $episode de $contentId")
+            var detail = first.getOrNull() ?: return first.asError()
+            if (season > 0) {
+                val current = magisSeasonOfDetail(detail, seriesContentId)
+                val target = magisContentIdForSeason(detail, season)
+                if (target != null && target != seriesContentId) {
+                    // The requested season has its OWN contentId: `v4/getItemData` again and
+                    // the season's detail REPLACES the first one — the episodes travel inside
+                    // THAT detail, and its contentId is what startPlayVOD must receive.
+                    val seasonCall = session.withValidSession {
+                        portal.call(
+                            path = "v4/getItemData",
+                            bean = mapOf(
+                                "contentId" to target,
+                                "type" to "0",
+                                "sortType" to "0",
+                                "language" to "en",
+                                "macAddr" to MagisDevice.FIXED_MAC,
+                            ),
+                            userId = session.userId,
+                            userToken = session.userToken,
+                        )
+                    }
+                    detail = seasonCall.getOrNull() ?: return seasonCall.asError()
+                    seriesContentId = target
+                } else if (current != null && current != season) {
+                    // The portal identified this detail as a DIFFERENT season and there is no
+                    // destination contentId: NO result — better nothing than another season's
+                    // episode (the Ted Lasso S2E1-played-S1E1 bug).
+                    return MagisResult.PortalError(
+                        NO_EPISODE,
+                        "Magis no tiene la temporada $season de $seriesContentId",
+                    )
+                }
+                // When `current` is null (a non-empty list that does not identify the detail)
+                // and there is no destination, the reference KEEPS the detail it already had:
+                // losing episodes would be worse than not identifying the season.
+            }
+            contentId = magisEpisodeId(detail, episode)
+                ?: return MagisResult.PortalError(NO_EPISODE, "Magis no trajo el episodio $episode de $seriesContentId")
         }
 
         // 4. Play session: episodeList[0] → best media → license.
