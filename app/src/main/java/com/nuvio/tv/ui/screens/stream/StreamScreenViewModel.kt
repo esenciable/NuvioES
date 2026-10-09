@@ -487,6 +487,14 @@ class StreamScreenViewModel @Inject constructor(
                     installedAddonOrder,
                     pluginOrder
                 )
+                // Native sources and scrapers can resolve the EXACT same CDN URL (Magis VOD vs
+                // "Magis VOD - Auto"). Ordered with native first, the first occurrence wins, so
+                // the duplicate row disappears while the scraper still backs the native source
+                // up if it ever yields nothing. Must run AFTER ordering: order picks the
+                // survivor. A group emptied here is dropped entirely, so the provider list and
+                // the source chips reflect what is actually present.
+                val deduplicated = deduplicateStreamsAcrossGroups(orderedAddonStreams)
+                val dedupedAddonStreams = deduplicated.groups
 
                 // Preserve badges already computed by prior badge jobs so they
                 // don't vanish when repository emits fresh (badge-less) streams.
@@ -495,9 +503,9 @@ class StreamScreenViewModel @Inject constructor(
                     .associateBy { it.badgeMergeKey() }
 
                 val mergedAddonStreams = if (existingBadgedStreams.isEmpty()) {
-                    orderedAddonStreams
+                    dedupedAddonStreams
                 } else {
-                    orderedAddonStreams.map { group ->
+                    dedupedAddonStreams.map { group ->
                         group.copy(
                             streams = group.streams.map { stream ->
                                 val existing = existingBadgedStreams[stream.badgeMergeKey()]
@@ -558,7 +566,9 @@ class StreamScreenViewModel @Inject constructor(
                         filteredStreams = paginatedStreams,
                         availableAddons = availableAddons,
                         sourceChips = mergeSourceChipStatuses(
-                            existing = _uiState.value.sourceChips,
+                            existing = _uiState.value.sourceChips.filterNot { chip ->
+                                chip.name in deduplicated.droppedGroupNames
+                            },
                             succeededNames = mergedAddonStreams.map { it.addonName }
                         ),
                         // Preserve an already-resolved stream: the post-collect
@@ -716,7 +726,12 @@ class StreamScreenViewModel @Inject constructor(
                                 val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(
                                     result.data, installedAddonOrder, pluginOrder
                                 )
-                                val allStreams = orderedStreams.flatMap { it.streams }
+                                // Same cross-group URL dedup as applySuccess, so the early
+                                // binge-group match cannot pick the scraper's duplicate copy of
+                                // a stream the native source already provided.
+                                val allStreams = deduplicateStreamsAcrossGroups(orderedStreams)
+                                    .groups
+                                    .flatMap { it.streams }
                                 val earlyMatch = StreamAutoPlaySelector.selectAutoPlayStream(
                                     streams = allStreams,
                                     mode = playerSettings.streamAutoPlayMode,
