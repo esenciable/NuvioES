@@ -13,6 +13,7 @@ import com.nuvio.tv.ext.livetv.data.LiveTvPreviewCache
 import com.nuvio.tv.ext.livetv.data.LiveTvStore
 import com.nuvio.tv.ext.livetv.data.NativeLiveCatalogLoad
 import com.nuvio.tv.ext.livetv.data.NativeLiveSources
+import com.nuvio.tv.ext.livetv.data.RememberedNativeCatalog
 import com.nuvio.tv.ext.livetv.data.RoutingLiveTvStreamResolver
 import com.nuvio.tv.ext.livetv.data.epg.EpgRepository
 import com.nuvio.tv.ext.livetv.data.epg.EpgSnapshot
@@ -145,6 +146,8 @@ class LiveTvViewModel @Inject constructor(
     private var disabledSports: Set<String> = emptySet()
     /** The last sport set written to the store, so repeated publishes do not hit it again. */
     private var lastKnownSportsWritten: Set<String> = emptySet()
+    /** The last native-catalog list written to the store, for the same publish-once reason. */
+    private var lastRememberedNativeCatalogs: List<RememberedNativeCatalog> = emptyList()
     private var searchQuery: String = ""
     /** Set while the full [refresh] runs, so a second trigger cannot stack two full loads. */
     private var fullRefreshInFlight = false
@@ -446,6 +449,7 @@ class LiveTvViewModel @Inject constructor(
                 // sentinel base URL).
                 loadedChannels = addonLoad.channels + nativeLoad.channels
                 nativeCatalogs = nativeLoad.catalogs
+                rememberNativeCatalogs()
                 applyPartitionAndFilters()
 
                 val outcome = when {
@@ -658,6 +662,35 @@ class LiveTvViewModel @Inject constructor(
         if (sports == lastKnownSportsWritten) return
         lastKnownSportsWritten = sports
         viewModelScope.launch { liveTvStore.rememberSports(sports) }
+    }
+
+    /**
+     * Publishes the native catalogs this load observed to the store, so the settings screen can
+     * offer their categories.
+     *
+     * The settings ViewModel deliberately never loads catalogs -- its documented design -- so it
+     * cannot derive the native rows itself; the screen, which ALREADY loads them for its own
+     * slider, is the publisher, and the store bridges the two exactly as it bridges every
+     * preference the pane flips -- and exactly as [rememberKnownSports] bridges the sport rows.
+     *
+     * The write is a wholesale replace: a native source that stopped publishing a category must
+     * stop being offered. Deduplicated like [rememberKnownSports]: publish() runs many times
+     * between loads, and an identical observation must not reach the store again. The field starts
+     * empty, so an empty observation at startup is also skipped instead of wiping a remembered
+     * list -- the same accepted staleness window the sports precedent carries.
+     */
+    private fun rememberNativeCatalogs() {
+        val observed = nativeCatalogs.map { catalog ->
+            RememberedNativeCatalog(
+                provider = catalog.addonName,
+                addonBaseUrl = catalog.addonBaseUrl,
+                catalogId = catalog.catalogId,
+                label = catalog.catalogName
+            )
+        }
+        if (observed == lastRememberedNativeCatalogs) return
+        lastRememberedNativeCatalogs = observed
+        viewModelScope.launch { liveTvStore.rememberNativeCatalogs(observed) }
     }
 
     /**

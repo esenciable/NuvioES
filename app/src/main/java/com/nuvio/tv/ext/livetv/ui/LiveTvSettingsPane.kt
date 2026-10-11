@@ -94,19 +94,30 @@ internal fun LiveTvSettingsPane(
             ) {}
         }
 
-        // Every category the user is allowed to hide. All and Favorites are absent by construction:
-        // without All the list has no default state, and Favorites is our own store, not a catalog.
-        items(
-            items = state.categories.filter { it.id.canBeHidden },
-            key = { "category-${it.id.preferenceKey}" }
-        ) { category ->
-            val visible = category.id.preferenceKey !in state.hiddenCategoryIds
-            SettingsToggleRow(
-                title = category.settingsLabel(),
-                subtitle = null,
-                checked = visible,
-                onToggle = { onSetCategoryVisible(category.id, !visible) }
-            )
+        // The category rows grouped by provider: one header per addon source, then one per native
+        // source, each followed by its own rows. The native groups arrive through the store -- the
+        // settings ViewModel deliberately never loads a catalog -- so before the user first opens
+        // Live TV there is no native group at all, not an empty header. Every toggle still calls
+        // `onSetCategoryVisible` with the SAME preference key the screen's slider filters by, so a
+        // flip here moves the chip on the screen and survives a restart. All and Favorites are
+        // absent by construction: without All the list has no default state, and Favorites is our
+        // own store, not a catalog.
+        state.categoryGroups.forEachIndexed { groupIndex, group ->
+            item(key = "category-group-$groupIndex-${group.provider}") {
+                SettingsGroupCard(title = group.provider) {}
+            }
+            items(
+                items = group.categories.filter { it.id.canBeHidden },
+                key = { "category-${it.id.preferenceKey}" }
+            ) { category ->
+                val visible = category.id.preferenceKey !in state.hiddenCategoryIds
+                SettingsToggleRow(
+                    title = category.settingsLabel(),
+                    subtitle = null,
+                    checked = visible,
+                    onToggle = { onSetCategoryVisible(category.id, !visible) }
+                )
+            }
         }
 
         item(key = "sports-header") {
@@ -162,7 +173,10 @@ private fun sourceOriginLabel(source: EpgSource): String = when (source.origin) 
     EpgSourceOrigin.User -> stringResource(R.string.live_tv_settings_source_user)
 }
 
-/** A hideable category is always an addon catalog, so the addon's own name is the label. */
+/**
+ * A hideable category is always one a source published, so the source's own name for it is the
+ * label -- the addon's catalog name, the portal category's name or the M3U group title.
+ */
 private fun LiveTvCategory.settingsLabel(): String =
     addonCatalogName ?: (id as? LiveTvCategoryId.Addon)?.catalogId.orEmpty()
 

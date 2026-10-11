@@ -2,17 +2,62 @@ package com.nuvio.tv.ext.livetv.data
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.data.local.ProfileDataStoreFactory
 import com.nuvio.tv.ext.livetv.domain.EpgSourceDiscovery
 import com.nuvio.tv.ext.livetv.domain.LiveTvSports
 import com.nuvio.tv.ext.livetv.domain.model.EpgSource
+import com.nuvio.tv.ext.livetv.domain.model.LiveTvCategoryId
+import com.nuvio.tv.ext.livetv.domain.model.preferenceKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * One native source's catalog, as last observed by the Live TV screen and remembered for the
+ * settings pane.
+ *
+ * The three identity fields are exactly what rebuilding the pane row and the hiding key needs: the
+ * source's display name groups the rows, and `addonBaseUrl + catalogId` rebuild the SAME typed
+ * [LiveTvCategoryId] the screen's slider keys its hiding on — never the display text, which either
+ * source may rename. Nothing else of a native load (channels, api type, paging support) survives
+ * here: the pane only flips toggles.
+ *
+ * Persisted as one encoded string per entry inside a string-set preference, the same convention
+ * every other set in this store uses — see [encode] for the one asymmetry that buys it.
+ */
+data class RememberedNativeCatalog(
+    val provider: String,
+    val addonBaseUrl: String,
+    val catalogId: String,
+    val label: String
+) {
+    /** The typed identity; [LiveTvCategoryId.preferenceKey] on it is the hiding key. */
+    val categoryId: LiveTvCategoryId get() = LiveTvCategoryId.Addon(addonBaseUrl, catalogId)
+
+    /**
+     * One string carrying all four fields. The separator is the ASCII unit separator, which no
+     * addon name, sentinel URL, catalog id or source label can realistically contain. [decode]
+     * demands EXACTLY four fields: a field that somehow carries the separator is unrepresentable
+     * and is dropped at read time rather than silently re-split into a wrong row.
+     */
+    fun encode(): String = listOf(provider, addonBaseUrl, catalogId, label).joinToString(SEPARATOR)
+
+    companion object {
+        private const val SEPARATOR = "\u001F"
+
+        /** Null for anything not shaped exactly like an [encode] output: a corrupt entry never becomes a row. */
+        fun decode(raw: String): RememberedNativeCatalog? {
+            val parts = raw.split(SEPARATOR)
+            if (parts.size != 4) return null
+            return RememberedNativeCatalog(parts[0], parts[1], parts[2], parts[3])
+        }
+    }
+}
 
 /**
  * The feature's own settings, per profile like everything else in this app.
@@ -43,6 +88,7 @@ class LiveTvStore @Inject constructor(
     private val hiddenCategoriesKey = stringSetPreferencesKey("livetv_hidden_categories")
     private val disabledSportsKey = stringSetPreferencesKey("livetv_disabled_sports")
     private val knownSportsKey = stringSetPreferencesKey("livetv_known_sports")
+    private val rememberedNativeCatalogsKey = stringSetPreferencesKey("livetv_remembered_native_catalogs")
     private val favoritesKey = stringSetPreferencesKey("livetv_favorite_channels")
 
     val hideAdultChannels: Flow<Boolean> = profileManager.activeProfileId.flatMapLatest { profileId ->
@@ -109,6 +155,29 @@ class LiveTvStore @Inject constructor(
         }
     }
 
+    /**
+     * The native sources' catalogs as last observed by the Live TV screen, in observation order.
+     *
+     * WHY this lives in the store and nowhere else: the settings screen never loads channels or
+     * catalogs -- its ViewModel's documented design, the same one that routes the sport rows through
+     * [knownSports]. Magis walks its portal (~38 categories) and PremiumTV downloads and parses an
+     * M3U list; a Settings pane doing either to flip a toggle is exactly the price the design
+     * refuses to pay. The screen, which ALREADY loads the native catalogs for its own slider,
+     * publishes what it saw through [rememberNativeCatalogs], and settings reads it back -- the
+     * same store-as-bridge pattern every preference above already uses.
+     *
+     * Empty means "nothing observed yet": before the user first opens Live TV no native catalog has
+     * been seen, and the pane renders no native group at all rather than an empty header.
+     */
+    val rememberedNativeCatalogs: Flow<List<RememberedNativeCatalog>> =
+        @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+        profileManager.activeProfileId.flatMapLatest { profileId ->
+            factory.get(profileId, FEATURE).data.map { preferences ->
+                (preferences[rememberedNativeCatalogsKey] ?: emptySet())
+                    .mapNotNull(RememberedNativeCatalog::decode)
+            }
+        }
+
     suspend fun setHideAdultChannels(hide: Boolean) {
         store().edit { it[hideAdultKey] = hide }
     }
@@ -135,6 +204,15 @@ class LiveTvStore @Inject constructor(
      */
     suspend fun rememberSports(sports: Set<String>) {
         store().edit { it[knownSportsKey] = sports }
+    }
+
+    /**
+     * Replaces the remembered native-catalog observation with [catalogs]. The write is a wholesale
+     * replace, not a merge: the screen observed the native sources' CURRENT catalogs, and a category
+     * a source stopped publishing must stop being offered as a toggle.
+     */
+    suspend fun rememberNativeCatalogs(catalogs: List<RememberedNativeCatalog>) {
+        store().edit { it[rememberedNativeCatalogsKey] = catalogs.map(RememberedNativeCatalog::encode).toSet() }
     }
 
     /** Turns a sport's matches on ([enabled] true) or off in the Partidos section. */

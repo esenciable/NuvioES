@@ -88,6 +88,15 @@ data class LiveTvUiState(
      */
     val matches: List<LiveTvChannel> = emptyList(),
     val categories: List<LiveTvCategory> = emptyList(),
+    /**
+     * The settings pane's category rows grouped by provider: one group per addon source, then one
+     * per native source the screen observed (published through the store -- the settings ViewModel
+     * never loads a catalog). The flat [categories] list keeps its built-ins first and its original
+     * addon order; the groups repeat their hideable members per provider so the pane can render a
+     * header per source. Only the settings state populates this; the screen's own slider reads
+     * [categories] and stays flat.
+     */
+    val categoryGroups: List<LiveTvCategoryGroup> = emptyList(),
     val selectedCategory: LiveTvCategoryId = LiveTvCategoryId.All,
     /**
      * What the user typed in the channel search.

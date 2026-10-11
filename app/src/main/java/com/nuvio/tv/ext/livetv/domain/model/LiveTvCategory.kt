@@ -25,6 +25,20 @@ sealed interface LiveTvCategoryId {
 }
 
 /**
+ * One provider's block of the settings pane's category list: the provider's display name and the
+ * categories IT publishes, in the order it publishes them.
+ *
+ * Grouping lives in the state rather than the composable so it is pure and testable -- the pane
+ * only renders one header per group with its rows under it. A provider's group never carries
+ * another provider's category, and `All`/`Favorites` join no group at all: they are built-ins, not
+ * something a provider published, and they cannot be hidden.
+ */
+data class LiveTvCategoryGroup(
+    val provider: String,
+    val categories: List<LiveTvCategory> = emptyList()
+)
+
+/**
  * A selectable category.
  *
  * [addonCatalogName] is the name the **addon** published, which is why it can be carried as data: it

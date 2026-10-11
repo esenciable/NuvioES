@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.ext.livetv.data.LiveTvStore
+import com.nuvio.tv.ext.livetv.data.RememberedNativeCatalog
 import com.nuvio.tv.ext.livetv.domain.EpgSourceDiscovery
 import com.nuvio.tv.ext.livetv.domain.LiveTvSettingsState
 import com.nuvio.tv.ext.livetv.domain.LiveTvSports
@@ -47,6 +48,11 @@ class LiveTvSettingsViewModel @Inject constructor(
     private var disabledSports: Set<String> = emptySet()
     /** Sports the screen observed the addon publishing; the pane's toggle rows come from this. */
     private var knownSports: List<String> = emptyList()
+    /**
+     * The native catalogs the screen observed and published through the store; the pane's native
+     * category rows come from these, merged with the addon ones. Never loaded here.
+     */
+    private var rememberedNativeCatalogs: List<RememberedNativeCatalog> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -98,6 +104,15 @@ class LiveTvSettingsViewModel @Inject constructor(
                 publish()
             }
         }
+        viewModelScope.launch {
+            liveTvStore.rememberedNativeCatalogs.collect { observed ->
+                // The native catalogs arrive the same way the sports do: the Live TV screen, which
+                // already loads them for its own slider, publishes what it saw and this ViewModel
+                // only reads. No catalog walk, no M3U download, no portal ever runs from here.
+                rememberedNativeCatalogs = observed
+                publish()
+            }
+        }
     }
 
     fun setAdultFilter(hide: Boolean) {
@@ -133,7 +148,8 @@ class LiveTvSettingsViewModel @Inject constructor(
             disabledEpgSourceIds = disabledEpgSourceIds,
             hiddenCategoryIds = hiddenCategoryIds,
             disabledSports = disabledSports,
-            knownSports = knownSports
+            knownSports = knownSports,
+            rememberedNativeCatalogs = rememberedNativeCatalogs
         )
     }
 }
