@@ -112,9 +112,14 @@ android {
         // siempre. Forma: `<base-upstream>-nuvioes.<n>` (el build metadata `+x` NO sirve:
         // VersionUtils lo descarta al comparar). Ver NUVIO-ES.md.
         // Base actualizada a upstream 1.1.0-beta.5 (1068) en el merge dev 2026-10.
-        val nuvioesBuild = 1
-        versionCode = 1068 * 100 + nuvioesBuild
-        versionName = "1.1.0-beta.5-nuvioes.$nuvioesBuild"
+        // OJO: los dos valores de abajo van LITERALES a proposito. `scripts/release-metadata.sh`
+        // (tooling de release que vino de upstream en el merge dev 2026-10) los extrae del TEXTO
+        // del archivo con `sed`, no los evalua: un `versionName` interpolado no pasa su regex de
+        // formato (`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`) y un `versionCode` con aritmetica
+        // solo le hace leer el primer numero (1068 en vez de 106801), en silencio. Al bumpear,
+        // editar los dos literales: versionCode = <base-upstream> * 100 + <n>.
+        versionCode = 106801
+        versionName = "1.1.0-beta.5-nuvioes.1"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")
