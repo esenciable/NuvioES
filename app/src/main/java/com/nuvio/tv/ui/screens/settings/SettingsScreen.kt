@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SportsSoccer
 import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
@@ -96,6 +97,7 @@ import com.nuvio.tv.core.build.AppFeaturePolicy
 import com.nuvio.tv.domain.model.ExperienceMode
 import com.nuvio.tv.domain.model.SettingsUiStyle
 import com.nuvio.tv.ext.livetv.ui.LiveTvSettingsEntry
+import com.nuvio.tv.ext.livetv.ui.LiveTvSportsSettingsEntry
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -162,6 +164,8 @@ private fun settingsSectionSpec(category: SettingsCategory): SettingsSectionSpec
     SettingsCategory.CONTENT_DISCOVERY -> SettingsSectionSpec(category, stringResource(R.string.settings_content_discovery), Icons.Default.Explore, destination = SettingsSectionDestination.Inline)
     // NuvioES: native Live TV keeps its settings section in the upstream rail refactor.
     SettingsCategory.TV_CHANNELS -> SettingsSectionSpec(category, stringResource(R.string.live_tv_settings_section_title), Icons.Rounded.Tv, destination = SettingsSectionDestination.Inline)
+    // NuvioES: the sports settings ride their own Partidos entry, next to Live TV — never inside it.
+    SettingsCategory.TV_MATCHES -> SettingsSectionSpec(category, stringResource(R.string.live_tv_matches_section), Icons.Rounded.SportsSoccer, destination = SettingsSectionDestination.Inline)
     SettingsCategory.PLAYBACK -> SettingsSectionSpec(category, stringResource(R.string.settings_playback), Icons.Rounded.PlayArrow, destination = SettingsSectionDestination.Inline)
     SettingsCategory.INTEGRATION -> SettingsSectionSpec(category, stringResource(R.string.settings_integration), Icons.Default.Link, destination = SettingsSectionDestination.Inline)
     SettingsCategory.TRACKING -> SettingsSectionSpec(category, stringResource(R.string.settings_tracking_title), Icons.Default.Sync, destination = SettingsSectionDestination.Inline)
@@ -230,6 +234,7 @@ fun SettingsScreen(
             SettingsCategory.LAYOUT to FocusRequester(),
             SettingsCategory.CONTENT_DISCOVERY to FocusRequester(),
             SettingsCategory.TV_CHANNELS to FocusRequester(),
+            SettingsCategory.TV_MATCHES to FocusRequester(),
             SettingsCategory.INTEGRATION to FocusRequester(),
             SettingsCategory.TRACKING to FocusRequester(),
             SettingsCategory.PLAYBACK to FocusRequester(),
@@ -932,6 +937,14 @@ private fun SettingsDetailPane(
         SettingsCategory.TV_CHANNELS -> LiveTvSettingsEntry(
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.TV_CHANNELS]
+            } else {
+                null
+            }
+        )
+        // NuvioES: the sports settings under their own Partidos entry (restored placement).
+        SettingsCategory.TV_MATCHES -> LiveTvSportsSettingsEntry(
+            initialFocusRequester = if (allowDetailAutofocus) {
+                contentFocusRequesters[SettingsCategory.TV_MATCHES]
             } else {
                 null
             }

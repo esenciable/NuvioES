@@ -17,6 +17,10 @@ internal enum class SettingsCategory(val group: SettingsRailGroup) {
     // NuvioES: native Live TV settings section (kept from the fork, placed before playback's
     // group neighbors).
     TV_CHANNELS(SettingsRailGroup.WATCH),
+    // NuvioES: the sports settings have their own rail entry under the matches/Partidos group —
+    // restored after the upstream rail refactor folded them into the Live TV pane. Live TV settings
+    // govern only live TV (Magis + PremiumTV); these govern Partidos.
+    TV_MATCHES(SettingsRailGroup.WATCH),
     PLAYBACK(SettingsRailGroup.WATCH),
     INTEGRATION(SettingsRailGroup.SERVICES),
     TRACKING(SettingsRailGroup.SERVICES),

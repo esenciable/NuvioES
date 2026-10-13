@@ -17,7 +17,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * Resolves its own [LiveTvSettingsViewModel] -- the settings-only slice of the state, without the
  * channel list or the guide -- and renders the same [LiveTvSettingsPane] the in-screen button shows,
  * over the same store. Both entry points therefore read and write the same preferences and cannot
- * diverge.
+ * diverge. The per-sport toggles are NOT here: they govern Partidos, and since the upstream rail
+ * refactor they live in their own entry, [LiveTvSportsSettingsEntry].
  */
 @Composable
 internal fun LiveTvSettingsEntry(
@@ -47,8 +48,7 @@ internal fun LiveTvSettingsEntry(
             state = state,
             onSetAdultFilter = viewModel::setAdultFilter,
             onSetEpgSourceEnabled = viewModel::setEpgSourceEnabled,
-            onSetCategoryVisible = viewModel::setCategoryVisible,
-            onSetSportEnabled = viewModel::setSportEnabled
+            onSetCategoryVisible = viewModel::setCategoryVisible
         )
     }
 }

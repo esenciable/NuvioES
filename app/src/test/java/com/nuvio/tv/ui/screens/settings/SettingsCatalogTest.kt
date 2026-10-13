@@ -23,6 +23,7 @@ class SettingsCatalogTest {
                 SettingsCategory.LAYOUT,
                 SettingsCategory.CONTENT_DISCOVERY,
                 SettingsCategory.TV_CHANNELS,
+                SettingsCategory.TV_MATCHES,
                 SettingsCategory.PLAYBACK,
                 SettingsCategory.INTEGRATION,
                 SettingsCategory.TRACKING,
@@ -32,6 +33,16 @@ class SettingsCatalogTest {
             ),
             categories
         )
+    }
+
+    @Test
+    fun `the sports settings have their own entry after Live TV, not inside it`() {
+        val categories = visibleSettingsCategories(true, isEssentialMode = false, isDebugBuild = false)
+
+        // The owner's restoration: sports settings are a matches/Partidos entry of their own in the
+        // rail, adjacent to Live TV but never a section of the Live TV pane.
+        assertEquals(categories.indexOf(SettingsCategory.TV_CHANNELS) + 1, categories.indexOf(SettingsCategory.TV_MATCHES))
+        assertEquals(SettingsRailGroup.WATCH, SettingsCategory.TV_MATCHES.group)
     }
 
     @Test
