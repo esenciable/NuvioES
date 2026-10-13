@@ -82,7 +82,13 @@ internal fun LiveTvSportsSettingsPane(
     val firstToggle = remember { FocusRequester() }
 
     // Focus lands on the first control on entry, never nowhere. Same contract as the channel list.
-    LaunchedEffect(Unit) {
+    // The first control here is the first SPORT row, and the rows come from the store
+    // asynchronously: at the first composition the state still carries the defaults (the settings
+    // ViewModel collects the store after init), so a request fired once on entry would find no
+    // attached node, fail, and leave the pane with NOTHING focused -- which on a television reads
+    // as a dead, empty pane. Keying on the first sport re-fires the request the moment the rows
+    // land, and stays a no-op (runCatching) while there is nothing to focus.
+    LaunchedEffect(state.knownSports.firstOrNull()) {
         runCatching { firstToggle.requestFocus() }
     }
 
@@ -121,7 +127,15 @@ internal fun LiveTvSportsSettingsPane(
                 title = sportDisplayLabel(sport),
                 subtitle = null,
                 checked = enabled,
-                onToggle = { onSetSportEnabled(sport, !enabled) }
+                onToggle = { onSetSportEnabled(sport, !enabled) },
+                // The pane's own entry-focus contract: the requester rides the FIRST row only.
+                // Attaching it to every row would make requestFocus ambiguous; a static
+                // attachment is impossible because the first row is the store's first sport.
+                modifier = if (sport == state.knownSports.first()) {
+                    Modifier.focusRequester(firstToggle)
+                } else {
+                    Modifier
+                }
             )
         }
     }
