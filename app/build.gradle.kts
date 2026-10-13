@@ -118,8 +118,8 @@ android {
         // formato (`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`) y un `versionCode` con aritmetica
         // solo le hace leer el primer numero (1068 en vez de 106801), en silencio. Al bumpear,
         // editar los dos literales: versionCode = <base-upstream> * 100 + <n>.
-        versionCode = 106801
-        versionName = "1.1.0-beta.5-nuvioes.1"
+        versionCode = 106802
+        versionName = "1.1.0-beta.5-nuvioes.2"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")
