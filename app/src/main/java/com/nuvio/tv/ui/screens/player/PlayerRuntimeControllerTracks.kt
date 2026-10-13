@@ -414,7 +414,7 @@ internal fun PlayerRuntimeController.maybeAdjustLibassPipelineForTracks(tracks: 
     }
 
     scope.launch {
-        releasePlayer()
+        releasePlayer(flushPlaybackState = true, keepTorrentStream = true)
         initializePlayer(currentStreamUrl, currentHeaders)
     }
 }
@@ -1070,6 +1070,7 @@ internal fun PlayerRuntimeController.applyPersistedTrackPreference(
                             subtitleAddonRestoredByPersistedPreference = true
                             pendingRestoredAddonSubtitle = addonFallback
                             selectAddonSubtitle(addonFallback)
+                            maybeRunAutomaticSubtitleSync(addonFallback) // AutoSync hook
                             updatedAddonSubtitle = addonFallback
                             updatedPending = updatedPending.copy(subtitle = null)
                         } else {
@@ -1107,6 +1108,7 @@ internal fun PlayerRuntimeController.applyPersistedTrackPreference(
                 subtitleAddonRestoredByPersistedPreference = true
                 pendingRestoredAddonSubtitle = addonMatch
                 selectAddonSubtitle(addonMatch)
+                maybeRunAutomaticSubtitleSync(addonMatch) // AutoSync hook
                 updatedAddonSubtitle = addonMatch
                 val shouldKeepPendingUntilMpvConfirmsSelection =
                     usingSwitchPending && isUsingMpvEngine()
@@ -1597,6 +1599,10 @@ internal fun PlayerRuntimeController.tryAutoSelectPreferredSubtitleFromAvailable
         Log.d(PlayerRuntimeController.TAG, "AUTO_SUB stop: user explicitly selected current subtitle")
         return
     }
+    if (hasBurnedInServerSubtitle) {
+        Log.d(PlayerRuntimeController.TAG, "AUTO_SUB stop: server is burning in a subtitle")
+        return
+    }
     val state = _uiState.value
     val preferredTargets = subtitleLanguageTargets()
     val primaryTarget = preferredTargets.firstOrNull()
@@ -1694,6 +1700,7 @@ internal fun PlayerRuntimeController.tryAutoSelectPreferredSubtitleFromAvailable
                     "AUTO_SUB pick addon (primary) over internal (secondary): addon lang=${primaryAddonMatch.lang} vs internal variant=$trackVariant"
                 )
                 selectAddonSubtitle(primaryAddonMatch)
+                maybeRunAutomaticSubtitleSync(primaryAddonMatch) // AutoSync hook
                 return
             }
         }
@@ -1757,6 +1764,7 @@ internal fun PlayerRuntimeController.tryAutoSelectPreferredSubtitleFromAvailable
         )
         if (selectedMatchesPrimary) {
             autoSubtitleSelected = true
+            maybeRunAutomaticSubtitleSync(matchingSelectedAddon) // AutoSync hook
             Log.d(PlayerRuntimeController.TAG, "AUTO_SUB stop: matching addon already selected (primary match)")
             return
         }
@@ -1804,6 +1812,7 @@ internal fun PlayerRuntimeController.tryAutoSelectPreferredSubtitleFromAvailable
         autoSubtitleSelected = true
         Log.d(PlayerRuntimeController.TAG, "AUTO_SUB pick addon lang=${addonMatch.lang} id=${addonMatch.id}")
         selectAddonSubtitle(addonMatch)
+        maybeRunAutomaticSubtitleSync(addonMatch) // AutoSync hook
     } else {
         Log.d(PlayerRuntimeController.TAG, "AUTO_SUB no addon match for targets=$targets")
     }
@@ -1819,12 +1828,7 @@ internal fun PlayerRuntimeController.startFrameRateProbe(
     frameRateProbeJob?.cancel()
     _uiState.update { state ->
         if (!preserveCurrentDetection) {
-            state.copy(
-                detectedFrameRateRaw = 0f,
-                detectedFrameRate = 0f,
-                detectedFrameRateSource = null,
-                afrProbeRunning = false
-            )
+            state.clearFrameRateDetection().copy(afrProbeRunning = false)
         } else {
             state.copy(afrProbeRunning = false)
         }

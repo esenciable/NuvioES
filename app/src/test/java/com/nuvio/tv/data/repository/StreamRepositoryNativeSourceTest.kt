@@ -8,6 +8,7 @@ import com.nuvio.tv.core.plugin.PluginManager
 import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.DebridSettingsDataStore
+import com.nuvio.tv.data.mediaserver.ServerStreams
 import com.nuvio.tv.data.remote.api.AddonApi
 import com.nuvio.tv.data.remote.dto.StreamDto
 import com.nuvio.tv.data.remote.dto.StreamResponseDto
@@ -185,6 +186,8 @@ class StreamRepositoryNativeSourceTest {
                 tmdbService = tmdbService,
                 debridStreamPresentation = presentation,
                 localDebridAvailabilityService = availability,
+                // Upstream's mediaserver stream source; unused by these native-source tests.
+                serverStreams = mockk<ServerStreams>(relaxed = true),
                 nativeVodSources = NativeVodSources(nativeSources),
             ),
             pluginManager = pluginManager,

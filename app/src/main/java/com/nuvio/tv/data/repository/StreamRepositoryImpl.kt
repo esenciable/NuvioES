@@ -13,6 +13,10 @@ import com.nuvio.tv.core.profile.ProfileManager
 import com.nuvio.tv.core.tmdb.TmdbService
 import com.nuvio.tv.data.local.DebridSettingsDataStore
 import com.nuvio.tv.data.mapper.toDomain
+import com.nuvio.tv.data.mediaserver.ServerStreamSource
+import com.nuvio.tv.data.mediaserver.ServerStreams
+import com.nuvio.tv.data.mediaserver.messageRes
+import com.nuvio.tv.data.mediaserver.serverFailure
 import com.nuvio.tv.data.remote.api.AddonApi
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.model.AddonStreams
@@ -57,8 +61,9 @@ class StreamRepositoryImpl @Inject constructor(
     private val tmdbService: TmdbService,
     private val debridStreamPresentation: DebridStreamPresentation,
     private val localDebridAvailabilityService: LocalDebridAvailabilityService,
-    // Native VOD sources (e.g. Magis) resolve on-device beside the scrapers; the default keeps
-    // the constructor usable without the feature.
+    private val serverStreams: ServerStreams,
+    // NuvioES: Native VOD sources (e.g. Magis) resolve on-device beside the scrapers; the
+    // default keeps the constructor usable without the feature.
     private val nativeVodSources: NativeVodSources = NativeVodSources(emptyList())
 ) : StreamRepository {
     private val streamSearchSessions = StreamSearchSessionCache()
@@ -97,6 +102,7 @@ class StreamRepositoryImpl @Inject constructor(
         forceRefresh: Boolean
     ): Flow<NetworkResult<List<AddonStreams>>> = flow {
         val sourceConfiguration = captureSourceConfiguration()
+        val isNativeServerRequest = serverStreams.isNativeRequest(videoId)
         val requestKey = StreamSearchRequestKey(
             profileId = sourceConfiguration.profileId,
             type = type.lowercase(),
@@ -111,7 +117,8 @@ class StreamRepositoryImpl @Inject constructor(
                 pluginRepositories = sourceConfiguration.pluginRepositories,
                 debridPresentationConfiguration = sourceConfiguration.debridSettings
                     .withoutRawCredentials()
-                    .toString()
+                    .toString(),
+                serverRevision = serverStreams.revision
             )
         )
 
@@ -125,10 +132,12 @@ class StreamRepositoryImpl @Inject constructor(
                     videoId = videoId,
                     season = season,
                     episode = episode,
-                    addons = sourceConfiguration.addons,
+                    addons = if (isNativeServerRequest) emptyList() else sourceConfiguration.addons,
                     debridSettings = sourceConfiguration.debridSettings,
-                    hasCompatiblePlugins = sourceConfiguration.pluginsEnabled &&
-                        sourceConfiguration.enabledScrapers.any { scraper -> scraper.supportsType(type) }
+                    hasCompatiblePlugins = !isNativeServerRequest &&
+                        sourceConfiguration.pluginsEnabled &&
+                        sourceConfiguration.enabledScrapers.any { scraper -> scraper.supportsType(type) },
+                    serverSources = serverStreams.sources(type, videoId, season, episode, forceRefresh)
                 )
             }
         )
@@ -166,7 +175,8 @@ class StreamRepositoryImpl @Inject constructor(
         episode: Int?,
         addons: List<Addon>,
         debridSettings: DebridSettings,
-        hasCompatiblePlugins: Boolean
+        hasCompatiblePlugins: Boolean,
+        serverSources: List<ServerStreamSource>
     ): Flow<NetworkResult<List<AddonStreams>>> = flow {
         emit(NetworkResult.Loading)
 
@@ -176,7 +186,7 @@ class StreamRepositoryImpl @Inject constructor(
                 addon.supportsStreamResource(type, videoId)
             }
 
-            val attemptedAddonNames = streamAddons.map { it.displayName }
+            val attemptedAddonNames = streamAddons.map { it.displayName } + serverSources.map { it.name }
             val attemptedFailures = java.util.Collections.synchronizedList(
                 mutableListOf<StreamAttemptFailure>()
             )
@@ -188,8 +198,9 @@ class StreamRepositoryImpl @Inject constructor(
                 // Channel to receive results as they complete
                 val resultChannel = Channel<AddonStreams>(Channel.UNLIMITED)
                 
-                // Track number of pending jobs (addons + plugin stream + native sources)
-                val totalJobs = streamAddons.size + 2
+                // Merged: upstream adds serverSources jobs (+1 plugin job); NuvioES adds the
+                // native VOD sources job.
+                val totalJobs = streamAddons.size + 1 + serverSources.size + 1
                 val completedJobs = java.util.concurrent.atomic.AtomicInteger(0)
 
                 // Launch addon jobs
@@ -241,6 +252,34 @@ class StreamRepositoryImpl @Inject constructor(
                                 addonName = addon.displayName,
                                 kind = StreamFailureKind.REQUEST_FAILED,
                                 detail = e.message ?: context.getString(com.nuvio.tv.R.string.stream_error_detail_addon_request_failed)
+                            )
+                        } finally {
+                            if (completedJobs.incrementAndGet() >= totalJobs) {
+                                resultChannel.close()
+                            }
+                        }
+                    }
+                }
+
+                serverSources.forEach { source ->
+                    launch {
+                        try {
+                            val streams = source.load()
+                            if (streams.isNotEmpty()) {
+                                resultChannel.send(AddonStreams(addonName = source.name, addonLogo = null, streams = streams))
+                            } else {
+                                attemptedFailures += StreamAttemptFailure(
+                                    addonName = source.name,
+                                    kind = StreamFailureKind.MISSING,
+                                    detail = context.getString(R.string.stream_error_detail_no_streams_for_id)
+                                )
+                            }
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
+                            attemptedFailures += StreamAttemptFailure(
+                                addonName = source.name,
+                                kind = StreamFailureKind.REQUEST_FAILED,
+                                detail = context.getString(e.serverFailure().messageRes())
                             )
                         } finally {
                             if (completedJobs.incrementAndGet() >= totalJobs) {
@@ -355,7 +394,8 @@ class StreamRepositoryImpl @Inject constructor(
         enabledScrapers: List<ScraperInfo>,
         groupPluginsByRepository: Boolean,
         pluginRepositories: List<PluginRepository>,
-        debridPresentationConfiguration: String
+        debridPresentationConfiguration: String,
+        serverRevision: Int
     ): String = buildString {
         append("addons:")
         addons.forEach { addon ->
@@ -372,6 +412,7 @@ class StreamRepositoryImpl @Inject constructor(
             }
         }
         append("|debrid:").append(debridPresentationConfiguration)
+        append("|servers:").append(serverRevision)
     }.sha256()
 
     private fun DebridSettings.withoutRawCredentials(): DebridSettings = copy(
@@ -603,6 +644,7 @@ class StreamRepositoryImpl @Inject constructor(
             ?: url
             ?: externalUrl
             ?: ytId
+            ?: serverTarget?.key()
             ?: "${addonName}:${name}:${title}"
         val nameSuffix = if (base == url) {
             val discriminator = name?.takeIf { it.isNotBlank() }

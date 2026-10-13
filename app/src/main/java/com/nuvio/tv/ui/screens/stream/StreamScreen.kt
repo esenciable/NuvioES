@@ -196,7 +196,7 @@ fun StreamScreen(
         if (openExternalInBrowser(playbackInfo)) {
             return
         }
-        val preference = playerPreference ?: return
+        val preference = if (playbackInfo.isServerStream) PlayerPreference.INTERNAL else playerPreference ?: return
         if (playbackInfo.isTorrent && !p2pEnabled) {
             pendingTorrentPlaybackInfo = playbackInfo
             showP2pConsentDialog = true
@@ -229,7 +229,7 @@ fun StreamScreen(
             showP2pConsentDialog = true
             return
         }
-        val preference = playerPreference ?: return
+        val preference = if (playbackInfo.isServerStream) PlayerPreference.INTERNAL else playerPreference ?: return
         if (uiState.isDirectAutoPlayFlow) {
             // Respect player preference even in direct autoplay flow
             when (preference) {
@@ -456,6 +456,7 @@ fun StreamScreen(
                             it.url == stream.url &&
                                 it.infoHash == stream.infoHash &&
                                 it.ytId == stream.ytId &&
+                                it.serverTarget == stream.serverTarget &&
                                 it.addonName == stream.addonName
                         }
                         if (currentIndex >= 0) {
@@ -1064,6 +1065,30 @@ private fun StreamsList(
         streamFocusRequesters.keys.retainAll(validKeys)
     }
     var firstCardHasFocus by remember(firstStreamKey) { mutableStateOf(false) }
+
+    var focusedStreamKey by remember { mutableStateOf<String?>(null) }
+    val prevStreamKeysRef = remember { mutableStateOf(streamKeys) }
+
+    LaunchedEffect(streamKeys) {
+        val prevKeys = prevStreamKeysRef.value
+        prevStreamKeysRef.value = streamKeys
+        val key = focusedStreamKey
+        if (key != null && prevKeys !== streamKeys) {
+            val oldIndex = prevKeys.indexOf(key)
+            val newIndex = streamKeys.indexOf(key)
+            if (oldIndex >= 0 && newIndex >= 0 && oldIndex != newIndex) {
+                val shift = newIndex - oldIndex
+                val correctedFirst = (streamListState.firstVisibleItemIndex + shift)
+                    .coerceIn(0, (streamKeys.size - 1).coerceAtLeast(0))
+                try {
+                    streamListState.scrollToItem(correctedFirst, streamListState.firstVisibleItemScrollOffset)
+                } catch (_: Exception) { }
+                withFrameNanos { }
+                runCatching { streamFocusRequesters[key]?.requestFocus() }
+            }
+        }
+    }
+
     // Reset scroll position to the top when the addon filter changes (#2538).
     LaunchedEffect(selectedAddonFilter) {
         streamListState.scrollToItem(0)
@@ -1169,6 +1194,9 @@ private fun StreamsList(
                         else -> streamFocusRequesters.getOrPut(streamKeys[index]) { FocusRequester() }
                     },
                     onFocusChanged = { focused ->
+                        if (focused) {
+                            focusedStreamKey = streamKeys.getOrNull(index)
+                        }
                         if (index == 0) {
                             firstCardHasFocus = focused
                         }
