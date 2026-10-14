@@ -56,6 +56,7 @@
 
     <string name="live_tv_matches_section">Partidas</string>
     <string name="live_tv_matches_empty">Não há partidas ao vivo agora</string>
+    <string name="live_tv_matches_error_desc">Não foi possível carregar as partidas ao vivo.</string>
     <string name="live_tv_source_picker_title">Escolha uma fonte</string>
     <string name="live_tv_source_fallback">Fonte %1$d</string>
 

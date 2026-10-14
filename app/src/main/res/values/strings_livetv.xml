@@ -65,6 +65,7 @@
 
     <string name="live_tv_matches_section">Matches</string>
     <string name="live_tv_matches_empty">No live matches right now</string>
+    <string name="live_tv_matches_error_desc">The live matches could not be loaded.</string>
     <string name="live_tv_source_picker_title">Choose a source</string>
     <string name="live_tv_source_fallback">Source %1$d</string>
 

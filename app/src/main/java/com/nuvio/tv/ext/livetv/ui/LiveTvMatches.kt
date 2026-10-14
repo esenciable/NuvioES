@@ -147,7 +147,7 @@ internal fun LiveTvMatchesScreen(
                 LiveTvStatus.LOADING -> CenteredMessage(stringResource(R.string.live_tv_loading))
 
                 LiveTvStatus.ERROR -> MatchesErrorState(
-                    description = state.errorMessage ?: stringResource(R.string.live_tv_empty_desc),
+                    description = state.errorMessage ?: stringResource(R.string.live_tv_matches_error_desc),
                     onRetry = onRetry
                 )
 

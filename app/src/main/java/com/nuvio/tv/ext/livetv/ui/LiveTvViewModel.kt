@@ -533,6 +533,17 @@ class LiveTvViewModel @Inject constructor(
             // full load republishes the matches itself.
             if (fullRefreshInFlight || _state.value.status != LiveTvStatus.LOADING) return@launch
 
+            // A sports read that FAILED (the loader counted unreadable catalogs), or that answered
+            // with nothing while the sports catalog IS present, is a failure, not a quiet day: the
+            // addon serves empty bodies when it cannot deliver the catalog, and reading that as
+            // "no live matches" lied to the user AND -- through [publishMatches]'s stamp -- pinned
+            // the empty state behind the re-entry TTL. [failMatchesWith] never stamps the clock,
+            // so the next entry retries instead of waiting out [MATCHES_REFRESH_TTL_MS].
+            if (loaded.failedCatalogs > 0 || loaded.channels.isEmpty()) {
+                failMatchesWith(null)
+                return@launch
+            }
+
             loadedChannels = loaded.channels
             // The same two filters the full load runs, in the same order: the matches grid can never
             // disagree with the settings just because it loaded through the fast path.
@@ -560,7 +571,7 @@ class LiveTvViewModel @Inject constructor(
         _state.update { it.copy(matches = matches, matchesStatus = status) }
     }
 
-    private fun failMatchesWith(message: String) {
+    private fun failMatchesWith(message: String?) {
         _state.update { it.copy(matchesStatus = LiveTvStatus.ERROR, errorMessage = message) }
     }
 
