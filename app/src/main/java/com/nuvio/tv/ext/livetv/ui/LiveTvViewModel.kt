@@ -2,6 +2,7 @@ package com.nuvio.tv.ext.livetv.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.domain.model.Addon
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.CatalogRepository
@@ -427,8 +428,11 @@ class LiveTvViewModel @Inject constructor(
                     emptyList()
                 }
 
-                catalogs = TvCatalogSelector.select(addons)
-                installedAddons = addons
+                // See [refreshAddonManifests]: the cached manifest upstream serves can be arbitrarily
+                // stale inside a long-running process, so every explicit refresh re-reads it first.
+                val currentAddons = refreshAddonManifests(addons)
+                catalogs = TvCatalogSelector.select(currentAddons)
+                installedAddons = currentAddons
                 // The channel set is about to change, so anything resolved for the old one is stale.
                 previewCache.clear()
                 _state.update { it.copy(preview = null, previewFailure = null) }
@@ -508,8 +512,11 @@ class LiveTvViewModel @Inject constructor(
                 failMatchesWith(failure.message ?: failure::class.java.simpleName)
                 return@launch
             }
-            installedAddons = addons
-            if (catalogs.isEmpty()) catalogs = TvCatalogSelector.select(addons)
+            // See [refreshAddonManifests]: the Partidos fast path re-reads the manifests on entry
+            // too, so a catalog the addon stopped (or started) publishing is honoured here as well.
+            val currentAddons = refreshAddonManifests(addons)
+            installedAddons = currentAddons
+            catalogs = TvCatalogSelector.select(currentAddons)
 
             val matchesCatalogs = catalogs.filter {
                 it.catalogId.contains(MATCHES_CATALOG_FRAGMENT, ignoreCase = true)
@@ -562,6 +569,31 @@ class LiveTvViewModel @Inject constructor(
             )
         }
     }
+
+    /**
+     * Re-fetches every ENABLED addon's manifest through the repository's own public fetch, and swaps
+     * the fresh manifest in when it answers.
+     *
+     * Upstream's manifest cache never re-evaluates its TTL while the process runs: its staleness
+     * check (`AddonRepositoryImpl.isCacheStale`) is only consulted when the installed-addons flow
+     * re-emits (an addon added, removed, renamed or toggled) or on a hard cache miss, never as
+     * wall-clock advances -- so a long-running process keeps serving the manifest it first fetched,
+     * even after the addon changed it. Live TV pays one explicit `fetchAddon` per enabled addon to
+     * see those changes. A failed (or exception-throwing) refetch keeps the cached manifest --
+     * upstream never evicts it on failure -- so the screen renders what it had instead of emptying.
+     *
+     * Call frequency is bounded by construction: [refresh] is guarded by [fullRefreshInFlight] and
+     * [refreshMatchesOnly] by its re-entry TTL, so this runs at most once per explicit refresh or
+     * Live TV entry, once per addon, and never in a loop over catalog data or on recomposition.
+     */
+    private suspend fun refreshAddonManifests(addons: List<Addon>): List<Addon> =
+        addons.map { addon ->
+            if (!addon.enabled) return@map addon
+            runCatching { addonRepository.fetchAddon(addon.baseUrl) }.getOrNull()
+                ?.let { result -> (result as? NetworkResult.Success)?.data }
+                ?.copy(enabled = addon.enabled)
+                ?: addon
+        }
 
     /** Publishes only the matches slice; the channel view is [refresh]'s to rebuild. */
     private fun publishMatches(status: LiveTvStatus, matches: List<LiveTvChannel>) {
